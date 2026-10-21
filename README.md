@@ -15,7 +15,7 @@ Your data is saved locally first, so the app works offline. Sync is optional.
 Grab the installer for your system from the [Releases](../../releases) page:
 
 - **Mac:** `Tiers-x.x.x-arm64.dmg` (Apple Silicon) or `Tiers-x.x.x.dmg` (Intel)
-- **Windows:** `Tiers Setup x.x.x.exe`
+- **Windows:** `Tiers-Setup-x.x.x.exe`
 
 The builds aren't code-signed, so the first launch needs one extra click:
 
