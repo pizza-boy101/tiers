@@ -3,16 +3,25 @@ import fs from "node:fs/promises";
 import { test } from "node:test";
 import os from "node:os";
 import path from "node:path";
-import { Store } from "../store.js";
+import { Store } from "../src/store.js";
 
 const dir = path.join(os.tmpdir(), "tiers-store-test");
+
+// File-backed storage, the same shape the app gets from Tauri.
+const fileIo = (folder) => ({
+  read: (name) => fs.readFile(path.join(folder, name), "utf8").catch((err) => (err.code === "ENOENT" ? null : Promise.reject(err))),
+  write: async (name, text) => {
+    await fs.mkdir(folder, { recursive: true });
+    await fs.writeFile(path.join(folder, name), text);
+  },
+});
 test("two devices merge edits, deletes, and tier changes", async () => {
   await fs.rm(dir, { recursive: true, force: true });
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   const task = (id, title, extra = {}) => ({ id, title, tierId: "t_must", date: null, done: false, notes: "", order: 1, ...extra });
 
-  const A = new Store(`${dir}/a/db.json`); await A.load();
-  const B = new Store(`${dir}/b/db.json`); await B.load();
+  const A = new Store(fileIo(`${dir}/a`)); await A.load();
+  const B = new Store(fileIo(`${dir}/b`)); await B.load();
   const edit = async (s, fn) => { const v = s.view(); const tiers = structuredClone(v.tiers), tasks = structuredClone(v.tasks); fn(tiers, tasks); return s.applyEdit({ tiers, tasks, baseRev: v.rev }); };
 
   // 1. Both devices add different tasks offline -> union
@@ -58,12 +67,23 @@ test("two devices merge edits, deletes, and tier changes", async () => {
   await A.mergeRemote(B.db);
   assert.deepEqual(A.db.tiers.map((t) => t.name), ["Must do", "Should do", "Someday", "Health"]);
 
+  // 6b. Editing a view in place (as the window does) is still detected as a change
+  const live = A.view();
+  live.tasks[0].title = "Edited in place";
+  await A.applyEdit({ tiers: live.tiers, tasks: live.tasks, baseRev: live.rev });
+  const edited = A.db.tasks.find((t) => t.id === live.tasks[0].id);
+  assert.equal(edited.title, "Edited in place");
+  assert.ok(edited.updatedAt > 0, "in-place edit gets a fresh timestamp");
+  live.tasks[0].title = "Mutated after saving";
+  assert.equal(A.db.tasks.find((t) => t.id === live.tasks[0].id).title, "Edited in place", "store keeps its own copy");
+
   // 7. Persisted + reload
-  const A2 = new Store(`${dir}/a/db.json`); await A2.load();
+  const A2 = new Store(fileIo(`${dir}/a`)); await A2.load();
   assert.deepEqual(A2.db, A.db);
 
   // 8. Old v1 file loads
-  await fs.writeFile(`${dir}/v1.json`, JSON.stringify({ version: 1, tiers: [{ id: "x", name: "X", color: "#111" }], tasks: [task("t", "Old")] }));
-  const V = new Store(`${dir}/v1.json`); await V.load();
+  await fs.mkdir(`${dir}/v1`, { recursive: true });
+  await fs.writeFile(`${dir}/v1/db.json`, JSON.stringify({ version: 1, tiers: [{ id: "x", name: "X", color: "#111" }], tasks: [task("t", "Old")] }));
+  const V = new Store(fileIo(`${dir}/v1`)); await V.load();
   assert.equal(V.db.tasks[0].updatedAt, 0); assert.deepEqual(V.db.deleted, {});
 });

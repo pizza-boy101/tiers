@@ -1,76 +1,27 @@
 {
   "name": "tiers",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "description": "A todo app with your own tiers, a backlog, and one-click suggestions from Claude.",
   "scripts": {
-    "start": "electron .",
-    "dist:mac": "electron-builder --mac",
-    "dist:win": "electron-builder --win",
-    "dist": "electron-builder --mac --win",
+    "bundle": "esbuild src/backend.js --bundle --minify --format=iife --target=safari15,chrome100 --outfile=public/backend.js",
+    "start": "tauri dev",
+    "dist": "tauri build",
+    "dist:mac": "tauri build --target universal-apple-darwin",
+    "dist:win": "tauri build --target x86_64-pc-windows-msvc",
     "test": "node --test"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.137.0",
+    "@tauri-apps/api": "^2.12.4",
+    "@tauri-apps/plugin-http": "^2.8.3",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "electron": "^44.9.2",
-    "electron-builder": "^26.15.3"
+    "@tauri-apps/cli": "^2.12.3",
+    "esbuild": "^0.28.2"
   },
   "productName": "Tiers",
-  "main": "main.js",
-  "author": "Nick",
-  "build": {
-    "appId": "com.nick.tiers",
-    "productName": "Tiers",
-    "directories": {
-      "output": "dist",
-      "buildResources": "build"
-    },
-    "files": [
-      "main.js",
-      "preload.cjs",
-      "config.js",
-      "store.js",
-      "sync.js",
-      "suggest.js",
-      "public/**/*",
-      "package.json"
-    ],
-    "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": [
-            "arm64",
-            "x64"
-          ]
-        }
-      ],
-      "category": "public.app-category.productivity",
-      "icon": "build/icon.png",
-      "identity": "-",
-      "hardenedRuntime": false
-    },
-    "win": {
-      "target": [
-        {
-          "target": "nsis",
-          "arch": [
-            "x64",
-            "arm64"
-          ]
-        }
-      ],
-      "icon": "build/icon.png"
-    },
-    "nsis": {
-      "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "createDesktopShortcut": true,
-      "artifactName": "${productName}-Setup-${version}.${ext}"
-    }
-  }
+  "author": "Nick"
 }

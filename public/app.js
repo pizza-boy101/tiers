@@ -51,7 +51,9 @@ function dayLabel(s, { short = false } = {}) {
 // ---------- helpers ----------
 
 const $ = (sel) => document.querySelector(sel);
-const uid = () => crypto.randomUUID().slice(0, 12);
+const uid = () =>
+  crypto.randomUUID?.().slice(0, 12) ?? (Date.now().toString(36) + Math.random().toString(36).slice(2, 8));
+const errText = (err) => (typeof err === "string" ? err : err?.message || String(err));
 let orderSeq = 0;
 const nextOrder = () => Date.now() * 100 + (orderSeq++ % 100);
 
@@ -95,7 +97,7 @@ async function flushSave() {
     const view = await api.saveState({ tiers: state.tiers, tasks: state.tasks, baseRev });
     if (seq === editSeq) adopt(view);
   } catch (err) {
-    toast(`Couldn't save: ${err.message}`);
+    toast(`Couldn't save: ${errText(err)}`);
   } finally {
     saving = false;
   }
@@ -294,6 +296,7 @@ function renderDay() {
 function renderBacklog() {
   const backlog = state.tasks.filter((t) => !t.date);
   $("#backlog-count").textContent = backlog.length || "";
+  $("#backlog-hint").textContent = `Click + on a task to put it on ${dayLabel(ui.selected) === "today" ? "today" : parseIso(ui.selected).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}.`;
 
   const select = $("#backlog-tier");
   const current = select.value;
@@ -319,7 +322,7 @@ function renderSuggestions() {
   btn.disabled = s.loading;
   $("#suggest-label").textContent = s.loading
     ? "Thinking…"
-    : hasKey ? `Suggest for ${dayLabel(ui.selected)}` : "Add an API key to get suggestions";
+    : hasKey ? `Suggest from backlog for ${dayLabel(ui.selected)}` : "Add an API key to get suggestions";
   $("#suggest-note").hidden = !hasKey;
 
   const box = $("#suggestions");
@@ -395,15 +398,15 @@ function renderSyncSettings() {
       <p class="small">Enter this code on the GitHub page that just opened:</p>
       <div class="row"><code class="device-code">${esc(s.pendingCode.userCode)}</code>
         <button class="btn small" type="button" data-sync="copy">Copy</button>
-        <a class="btn small ghost" href="${esc(s.pendingCode.url)}" target="_blank">Open GitHub</a></div>
+        <button class="btn small ghost" type="button" data-sync="open">Open GitHub</button></div>
       <p class="muted small">Waiting for you to approve…</p>
       <div class="row"><button class="btn ghost small" type="button" data-sync="cancel">Cancel</button></div>`;
   } else {
     box.innerHTML = `
       <p class="muted small">Sign in on each computer to keep your tasks in sync. Your data is stored in a private Gist on your GitHub account.</p>
       ${s.error ? `<p class="suggest-error">${esc(s.error)}</p>` : ""}
-      <div class="row"><button class="btn" type="button" data-sync="login" ${s.available ? "" : "disabled"}>Sign in with GitHub</button></div>
-      ${s.available ? "" : '<p class="muted small">Add a GitHub OAuth client ID below first (see the README).</p>'}`;
+      <div class="row"><button class="btn" type="button" data-sync="login">Sign in with GitHub</button></div>
+      ${state.settings.builtInClientId ? "" : '<p class="muted small">Needs a GitHub OAuth client ID, pasted below (see the README).</p>'}`;
   }
 }
 
@@ -417,14 +420,14 @@ function applySyncStatus(status) {
 
 async function requestSuggestions() {
   if (!state.settings.hasApiKey) {
-    openSettings();
+    openPanel("settings");
     return;
   }
   const date = ui.selected;
   ui.suggest = { loading: true, error: null, summary: null, items: [], date };
   renderSuggestions();
   const result = await api.suggest({ date, note: $("#suggest-note").value, count: 3 })
-    .catch((err) => ({ error: err.message }));
+    .catch((err) => ({ error: errText(err) }));
   ui.suggest = result.error
     ? { loading: false, error: result.error, summary: null, items: [], date }
     : { loading: false, error: null, summary: result.summary, items: result.suggestions, date };
@@ -479,7 +482,20 @@ function renderTierList() {
     </li>`).join("");
 }
 
-function openSettings() {
+// The Backlog / Tiers / Settings window.
+function openPanel(tab = "settings") {
+  const dlg = $("#settings-dialog");
+  dlg.dataset.tab = tab;
+  for (const btn of dlg.querySelectorAll('[role="tab"]')) btn.setAttribute("aria-selected", String(btn.dataset.tab === tab));
+  for (const pane of dlg.querySelectorAll("[data-pane]")) pane.hidden = pane.dataset.pane !== tab;
+  if (tab === "tiers") renderTierList();
+  if (tab === "settings" && (!dlg.open || dlg.dataset.filled !== "1")) fillSettings();
+  if (!dlg.open) dlg.showModal();
+  if (tab === "backlog") $("#backlog-input").focus();
+}
+
+function fillSettings() {
+  $("#settings-dialog").dataset.filled = "1";
   const form = $("#settings-form");
   const s = state.settings;
   form.apiKey.value = "";
@@ -495,7 +511,6 @@ function openSettings() {
   form.githubClientId.value = s.githubClientId || "";
   renderSyncSettings();
   $("#data-dir").textContent = s.dataDir || "";
-  $("#settings-dialog").showModal();
 }
 
 // ---------- events ----------
@@ -601,7 +616,7 @@ function bindEvents() {
     else if (e.key.toLowerCase() === "t") selectDay(today());
     else if (e.key.toLowerCase() === "n") {
       e.preventDefault();
-      $("#backlog-input").focus();
+      openPanel("backlog");
     }
   });
 
@@ -698,10 +713,6 @@ function bindDragAndDrop() {
 
 function bindDialogs() {
   // Tiers
-  $("#open-tiers").onclick = () => {
-    renderTierList();
-    $("#tiers-dialog").showModal();
-  };
   $("#tier-list").addEventListener("input", (e) => {
     const row = e.target.closest("[data-tier-row]");
     const tier = state.tiers.find((t) => t.id === row.dataset.tierRow);
@@ -709,7 +720,7 @@ function bindDialogs() {
     if (e.target.dataset.field === "name") tier.name = e.target.value.trim() || "Untitled";
     commit();
   });
-  $("#tier-list").addEventListener("click", (e) => {
+  $("#tier-list").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-tier-act]");
     if (!btn) return;
     const id = btn.closest("[data-tier-row]").dataset.tierRow;
@@ -726,7 +737,7 @@ function bindDialogs() {
       const msg = count
         ? `Delete “${tier.name}”? Its ${count} task${count === 1 ? "" : "s"} will move to “${fallback.name}”.`
         : `Delete “${tier.name}”?`;
-      if (!confirm(msg)) return;
+      if (!(await api.confirm(msg))) return;
       for (const t of state.tasks) if (t.tierId === tier.id) t.tierId = fallback.id;
       state.tiers.splice(i, 1);
     }
@@ -757,8 +768,16 @@ function bindDialogs() {
   };
 
   // Settings
-  $("#open-settings").onclick = openSettings;
+  $("#open-settings").onclick = () => openPanel("settings");
+  $("#open-backlog").onclick = () => openPanel("backlog");
+  $("#legend-edit").onclick = () => openPanel("tiers");
+  $("#panel-close").onclick = () => $("#settings-dialog").close("done");
+  $("#settings-dialog").querySelector(".tabs").addEventListener("click", (e) => {
+    const tab = e.target.closest('[role="tab"]');
+    if (tab) openPanel(tab.dataset.tab);
+  });
   $("#settings-dialog").addEventListener("close", async () => {
+    $("#settings-dialog").dataset.filled = "";
     if ($("#settings-dialog").returnValue !== "save") return;
     const form = $("#settings-form");
     const patch = { model: form.model.value };
@@ -788,12 +807,12 @@ function bindDialogs() {
       render();
       toast("Backup imported.");
     } catch (err) {
-      toast(err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
+      toast(errText(err));
     }
   };
   $("#reveal-btn").onclick = () => api.revealData();
 
-  $("#sync-chip").onclick = openSettings;
+  $("#sync-chip").onclick = () => openPanel("settings");
   $("#sync-settings").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-sync]");
     if (!btn) return;
@@ -802,20 +821,25 @@ function bindDialogs() {
         case "login":
           if (!state.settings.builtInClientId) {
             const id = $("#settings-form").githubClientId.value.trim();
+            if (!id) {
+              toast("Paste a GitHub OAuth client ID first.");
+              break;
+            }
             if (id !== state.settings.githubClientId) state.settings = await api.saveSettings({ githubClientId: id });
           }
           await api.sync.login();
           break;
+        case "open": await api.openUrl(state.sync.pendingCode.url); break;
         case "cancel": await api.sync.cancel(); break;
         case "signout": await api.sync.signOut(); break;
         case "now": await api.sync.now(); break;
         case "copy":
-          await navigator.clipboard.writeText(state.sync.pendingCode.userCode);
-          toast("Code copied.");
+          await navigator.clipboard.writeText(state.sync.pendingCode.userCode)
+            .then(() => toast("Code copied."), () => toast("Couldn't copy. Select the code and copy it instead."));
           break;
       }
     } catch (err) {
-      toast(err.message.replace(/^Error invoking remote method '[^']+': (Error: )?/, ""));
+      toast(errText(err));
     }
   });
 }

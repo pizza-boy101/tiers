@@ -4,12 +4,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tiers</title>
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <header class="topbar">
-    <div class="brand">
+  <header class="topbar" data-tauri-drag-region>
+    <div class="brand" data-tauri-drag-region>
       <img src="icon.svg" alt="" width="22" height="22">
       <span>Tiers</span>
     </div>
@@ -18,7 +17,7 @@
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19a4.5 4.5 0 1 0-1.4-8.8A6 6 0 0 0 4.5 12.5 3.5 3.5 0 0 0 7 19z"/></svg>
         <span id="sync-chip-label"></span>
       </button>
-      <button class="btn ghost" id="open-tiers" type="button">Edit tiers</button>
+      <button class="btn ghost" id="open-backlog" type="button">Backlog <span class="count" id="backlog-count"></span></button>
       <button class="btn ghost icon" id="open-settings" type="button" aria-label="Settings" title="Settings">
         <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
@@ -37,7 +36,7 @@
       </div>
       <div class="cal-grid" id="cal-days"></div>
       <button class="btn small" id="cal-today" type="button">Today</button>
-      <div class="legend" id="tier-legend"></div>
+      <div class="legend"><span id="tier-legend"></span><button class="link" id="legend-edit" type="button">Edit tiers</button></div>
     </section>
 
     <section class="panel day-panel" aria-label="Selected day" data-drop="day">
@@ -48,45 +47,20 @@
         </div>
       </div>
       <div class="progress" id="day-bar" aria-hidden="true"></div>
+      <div class="suggest-box">
+        <div class="suggest-row">
+          <button class="btn primary" id="suggest-btn" type="button">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9zM5 15l.7 1.8 1.8.7-1.8.7L5 20l-.7-1.8L2.5 17.5l1.8-.7z"/></svg>
+            <span id="suggest-label">Suggest from backlog</span>
+          </button>
+          <input id="suggest-note" type="text" placeholder="Optional: how's your day? e.g. “2 free hours, low energy”" maxlength="300">
+        </div>
+        <div id="suggestions"></div>
+      </div>
       <div id="carryover"></div>
       <div id="day-tiers"></div>
     </section>
-
-    <section class="panel backlog-panel" aria-label="Backlog" data-drop="backlog">
-      <div class="backlog-head">
-        <h2>Backlog <span class="count" id="backlog-count"></span></h2>
-      </div>
-
-      <div class="suggest-box">
-        <input id="suggest-note" type="text" placeholder="Optional: how's your day? e.g. “2 free hours, low energy”" maxlength="300">
-        <button class="btn primary" id="suggest-btn" type="button">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" aria-hidden="true"><path d="M12 2l1.8 5.2L19 9l-5.2 1.8L12 16l-1.8-5.2L5 9l5.2-1.8zM19 14l.9 2.6 2.6.9-2.6.9L19 21l-.9-2.6-2.6-.9 2.6-.9zM5 15l.7 1.8 1.8.7-1.8.7L5 20l-.7-1.8L2.5 17.5l1.8-.7z"/></svg>
-          <span id="suggest-label">Suggest for today</span>
-        </button>
-        <div id="suggestions"></div>
-      </div>
-
-      <form class="add-backlog" id="add-backlog">
-        <select id="backlog-tier" aria-label="Tier"></select>
-        <input id="backlog-input" type="text" placeholder="Add to backlog…" autocomplete="off">
-        <button class="btn" type="submit">Add</button>
-      </form>
-
-      <div id="backlog-tiers"></div>
-    </section>
   </main>
-
-  <dialog id="tiers-dialog">
-    <form method="dialog" class="dialog-body">
-      <h2>Your tiers</h2>
-      <p class="muted">Tiers are ranked top to bottom. Suggestions treat higher tiers as more important.</p>
-      <ol id="tier-list" class="tier-list"></ol>
-      <button class="btn" id="add-tier" type="button">+ Add tier</button>
-      <div class="dialog-actions">
-        <button class="btn primary" value="close">Done</button>
-      </div>
-    </form>
-  </dialog>
 
   <dialog id="task-dialog">
     <form method="dialog" class="dialog-body" id="task-form">
@@ -109,9 +83,32 @@
     </form>
   </dialog>
 
-  <dialog id="settings-dialog">
-    <form method="dialog" class="dialog-body" id="settings-form">
-      <h2>Settings</h2>
+  <dialog id="settings-dialog" class="panel-dialog">
+    <nav class="tabs" role="tablist">
+      <button type="button" role="tab" data-tab="backlog">Backlog</button>
+      <button type="button" role="tab" data-tab="tiers">Tiers</button>
+      <button type="button" role="tab" data-tab="settings">Settings</button>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost icon" id="panel-close" aria-label="Close">✕</button>
+    </nav>
+
+    <section class="dialog-body" data-pane="backlog" role="tabpanel">
+      <p class="muted small" id="backlog-hint"></p>
+      <form class="add-backlog" id="add-backlog">
+        <select id="backlog-tier" aria-label="Tier"></select>
+        <input id="backlog-input" type="text" placeholder="Add to backlog…" autocomplete="off">
+        <button class="btn" type="submit">Add</button>
+      </form>
+      <div id="backlog-tiers"></div>
+    </section>
+
+    <section class="dialog-body" data-pane="tiers" role="tabpanel">
+      <p class="muted small">Tiers are ranked top to bottom. Suggestions treat higher tiers as more important.</p>
+      <ol id="tier-list" class="tier-list"></ol>
+      <div class="row"><button class="btn" id="add-tier" type="button">+ Add tier</button></div>
+    </section>
+
+    <form method="dialog" class="dialog-body" id="settings-form" data-pane="settings" role="tabpanel">
       <label>Anthropic API key
         <input name="apiKey" type="password" autocomplete="off" placeholder="sk-ant-…">
       </label>
@@ -143,6 +140,7 @@
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
+  <script src="backend.js"></script>
   <script type="module" src="app.js"></script>
 </body>
 </html>

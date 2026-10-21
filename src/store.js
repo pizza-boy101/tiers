@@ -1,6 +1,3 @@
-import fs from "node:fs/promises";
-import path from "node:path";
-
 // Local data store. Keeps the database in memory, stamps every change with
 // `updatedAt`, records deletions as tombstones, and can merge with a copy from
 // another device (last edit wins per task/tier).
@@ -88,22 +85,21 @@ export function sameContent(a, b) {
 }
 
 export class Store {
-  constructor(file) {
-    this.file = file;
+  // `io` reads and writes a named data file: { read(name) -> string|null, write(name, text) }.
+  constructor(io, name = "db.json") {
+    this.io = io;
+    this.name = name;
     this.db = null;
     this.rev = 0;
     this.snapshots = new Map();
     this.listeners = new Set();
+    this.writing = Promise.resolve();
   }
 
   async load() {
-    try {
-      const raw = JSON.parse(await fs.readFile(this.file, "utf8"));
-      this.db = isValidDb(raw) ? normalize(raw) : defaultDb();
-    } catch (err) {
-      if (err.code !== "ENOENT") throw err;
-      this.db = defaultDb();
-    }
+    const text = await this.io.read(this.name);
+    const raw = text ? JSON.parse(text) : null;
+    this.db = isValidDb(raw) ? normalize(raw) : defaultDb();
     this.snapshot();
   }
 
@@ -113,8 +109,10 @@ export class Store {
     if (this.snapshots.size > MAX_SNAPSHOTS) this.snapshots.delete(this.snapshots.keys().next().value);
   }
 
+  // Always a copy: callers edit tasks in place, which must never touch the
+  // store's own data or its snapshots.
   view() {
-    return { rev: this.rev, tiers: this.db.tiers, tasks: this.db.tasks };
+    return structuredClone({ rev: this.rev, tiers: this.db.tiers, tasks: this.db.tasks });
   }
 
   onChange(fn) {
@@ -123,7 +121,8 @@ export class Store {
 
   // Apply an edit from the window. `baseRev` is the revision the window's copy
   // started from, so edits merged in from another device meanwhile are kept.
-  async applyEdit({ tiers, tasks, baseRev }) {
+  async applyEdit(edit) {
+    const { tiers, tasks, baseRev } = structuredClone(edit);
     const base = this.snapshots.get(baseRev) || this.db;
     const now = Date.now();
     const next = structuredClone(this.db);
@@ -181,7 +180,7 @@ export class Store {
 
   // Merge in a copy from another device. Returns the merged db.
   async mergeRemote(remote) {
-    const merged = merge(this.db, normalize(remote));
+    const merged = merge(this.db, normalize(structuredClone(remote)));
     if (!sameContent(merged, this.db)) await this.commit(merged, "remote");
     return this.db;
   }
@@ -193,11 +192,10 @@ export class Store {
     for (const fn of this.listeners) fn(source);
   }
 
-  // Write to a temp file and rename, so a crash mid-write never corrupts the data.
-  async persist() {
-    await fs.mkdir(path.dirname(this.file), { recursive: true });
-    const tmp = `${this.file}.tmp`;
-    await fs.writeFile(tmp, JSON.stringify(this.db, null, 2));
-    await fs.rename(tmp, this.file);
+  // Writes go out one at a time, in order, so an older save can never land last.
+  persist() {
+    const text = JSON.stringify(this.db, null, 2);
+    this.writing = this.writing.catch(() => {}).then(() => this.io.write(this.name, text));
+    return this.writing;
   }
 }

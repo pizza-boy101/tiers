@@ -1,0 +1,19 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Permissions for the main window",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging",
+    {
+      "identifier": "http:default",
+      "allow": [
+        { "url": "https://api.anthropic.com/*" },
+        { "url": "https://github.com/login/*" },
+        { "url": "https://api.github.com/*" },
+        { "url": "https://gist.githubusercontent.com/*" }
+      ]
+    }
+  ]
+}

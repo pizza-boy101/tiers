@@ -65,7 +65,7 @@ function buildPrompt({ db, date, note, count }) {
   return { prompt: lines.join("\n"), backlog };
 }
 
-export async function suggestFromBacklog({ apiKey, model, db, date, note, count }) {
+export async function suggestFromBacklog({ apiKey, model, db, date, note, count, fetch }) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date || "")) {
     throw Object.assign(new Error("Invalid date"), { status: 400 });
   }
@@ -74,7 +74,8 @@ export async function suggestFromBacklog({ apiKey, model, db, date, note, count 
     return { summary: "Your backlog is empty, so there's nothing to suggest.", suggestions: [] };
   }
 
-  const client = new Anthropic({ apiKey });
+  // Runs inside the app window; requests go through the app's own HTTP client.
+  const client = new Anthropic({ apiKey, fetch, dangerouslyAllowBrowser: true });
   let response;
   try {
     response = await client.beta.messages.parse({

@@ -2,14 +2,16 @@
 // the app shows a short code, you approve it on github.com, and the app gets
 // a token limited to the `gist` scope.
 
-const GITHUB = process.env.TIERS_GITHUB_URL || "https://github.com";
-const API = process.env.TIERS_GITHUB_API || "https://api.github.com";
 const GIST_FILE = "tiers-data.json";
 const GIST_DESCRIPTION = "Tiers app sync data";
 
 export class GitHubSync {
-  constructor({ store, getClientId, loadAuth, saveAuth, onStatus, openUrl }) {
+  constructor({ store, getClientId, loadAuth, saveAuth, onStatus, openUrl, fetch,
+    githubUrl = "https://github.com", apiUrl = "https://api.github.com" }) {
     this.store = store;
+    this.fetch = fetch;
+    this.githubUrl = githubUrl;
+    this.apiUrl = apiUrl;
     this.getClientId = getClientId;
     this.loadAuth = loadAuth;
     this.saveAuth = saveAuth;
@@ -49,7 +51,7 @@ export class GitHubSync {
     const clientId = this.getClientId();
     if (!clientId) throw new Error("No GitHub client ID is set up yet.");
     this.cancelLogin();
-    const res = await fetch(`${GITHUB}/login/device/code`, {
+    const res = await this.fetch(`${this.githubUrl}/login/device/code`, {
       method: "POST",
       headers: { Accept: "application/json", "Content-Type": "application/json" },
       body: JSON.stringify({ client_id: clientId, scope: "gist" }),
@@ -87,7 +89,7 @@ export class GitHubSync {
       if (login.cancelled) return;
       let data;
       try {
-        const res = await fetch(`${GITHUB}/login/oauth/access_token`, {
+        const res = await this.fetch(`${this.githubUrl}/login/oauth/access_token`, {
           method: "POST",
           headers: { Accept: "application/json", "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -140,7 +142,7 @@ export class GitHubSync {
   // ---------- GitHub API ----------
 
   async api(token, method, route, body) {
-    const res = await fetch(`${API}${route}`, {
+    const res = await this.fetch(`${this.apiUrl}${route}`, {
       method,
       headers: {
         Authorization: `Bearer ${token}`,
@@ -180,7 +182,7 @@ export class GitHubSync {
     const file = gist.files?.[GIST_FILE];
     if (!file) return null;
     if (!file.truncated) return JSON.parse(file.content);
-    const raw = await fetch(file.raw_url, { headers: { Authorization: `Bearer ${this.auth.token}` } });
+    const raw = await this.fetch(file.raw_url, { headers: { Authorization: `Bearer ${this.auth.token}` } });
     return JSON.parse(await raw.text());
   }
 

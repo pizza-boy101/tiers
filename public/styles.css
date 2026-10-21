@@ -61,11 +61,10 @@ code { font-size: 12px; background: var(--panel-2); padding: 1px 5px; border-rad
   align-items: center;
   justify-content: space-between;
   padding: 10px 18px;
-  -webkit-app-region: drag;
   user-select: none;
+  -webkit-user-select: none;
 }
-.platform-darwin .topbar { padding-left: 86px; }
-.topbar button, .topbar a { -webkit-app-region: no-drag; }
+.platform-darwin .topbar { padding-left: 86px; padding-top: 12px; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 15px; }
 .topbar-actions { display: flex; gap: 6px; }
 
@@ -128,7 +127,7 @@ textarea { resize: vertical; }
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: 320px minmax(0, 1fr) 360px;
+  grid-template-columns: 340px minmax(0, 1fr);
   gap: 14px;
   padding: 0 14px 14px;
 }
@@ -186,8 +185,9 @@ textarea { resize: vertical; }
 .cal-day.today.all-done:not(.selected) .num { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--text); }
 #cal-today { align-self: flex-start; }
 
-.legend { margin-top: auto; display: flex; flex-wrap: wrap; gap: 6px 12px; padding-top: 10px; border-top: 1px solid var(--line); }
-.legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+.legend { margin-top: auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+#tier-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; }
+#tier-legend span { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
 .legend i { width: 8px; height: 8px; border-radius: 50%; background: var(--c); }
 
 /* Day panel */
@@ -288,16 +288,20 @@ textarea { resize: vertical; }
 }
 .banner .grow { flex: 1; min-width: 160px; }
 
+.link { border: 0; background: none; padding: 0; color: var(--muted); font-size: 12px; cursor: pointer; text-decoration: underline; white-space: nowrap; }
+.link:hover { color: var(--text); }
+
 /* Backlog */
-.backlog-panel { display: flex; flex-direction: column; gap: 14px; }
-.count { font-weight: 500; color: var(--muted); font-size: 14px; }
+.count { font-weight: 500; color: var(--muted); }
+.count:empty { display: none; }
 .add-backlog { display: flex; gap: 6px; }
 .add-backlog select { max-width: 120px; }
 .add-backlog input { flex: 1; min-width: 0; }
 
 .suggest-box { display: flex; flex-direction: column; gap: 8px; padding: 12px; border-radius: 12px; background: var(--panel-2); }
 .suggest-box input { background: var(--panel); }
-.suggest-box .btn.primary { width: 100%; }
+.suggest-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.suggest-row input { flex: 1; min-width: 200px; }
 .suggest-summary { font-size: 13px; margin: 2px 0 0; }
 .suggestion {
   display: flex;
@@ -331,6 +335,24 @@ dialog {
 }
 dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 .dialog-body { display: flex; flex-direction: column; gap: 12px; padding: 22px; }
+
+/* Backlog / Tiers / Settings window */
+.panel-dialog { width: min(620px, calc(100vw - 32px)); height: min(680px, calc(100vh - 40px)); }
+.panel-dialog[open] { display: flex; flex-direction: column; }
+.panel-dialog .dialog-body { flex: 1; overflow-y: auto; }
+.tabs { display: flex; align-items: center; gap: 4px; padding: 12px 14px 0 18px; border-bottom: 1px solid var(--line); }
+.tabs [role="tab"] {
+  border: 0;
+  background: none;
+  padding: 8px 12px 10px;
+  font-weight: 600;
+  color: var(--muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+.tabs [role="tab"]:hover { color: var(--text); }
+.tabs [role="tab"][aria-selected="true"] { color: var(--text); border-bottom-color: var(--text); }
 .dialog-body label { display: flex; flex-direction: column; gap: 5px; font-size: 13px; font-weight: 550; }
 .dialog-body label.check { flex-direction: row; align-items: center; gap: 6px; font-weight: 450; }
 .dialog-body hr { border: 0; border-top: 1px solid var(--line); margin: 4px 0; width: 100%; }
@@ -366,6 +388,6 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); pointer-events: auto; }
 .toast button { background: none; border: 0; color: inherit; font-weight: 650; cursor: pointer; text-decoration: underline; padding: 0; }
 
-@media (max-width: 1180px) {
-  .layout { grid-template-columns: 280px minmax(0, 1fr) 320px; }
+@media (max-width: 1100px) {
+  .layout { grid-template-columns: 300px minmax(0, 1fr); }
 }
