@@ -119,16 +119,33 @@ export class GitHubSync {
   async finishLogin(login, token) {
     if (this.deviceLogin !== login) return;
     try {
-      const user = await this.api(token, "GET", "/user");
-      const gistId = await this.findGist(token);
-      this.auth = { token, login: user.login, gistId };
-      await this.saveAuth(this.auth);
-      this.deviceLogin = null;
-      this.emit();
-      await this.sync();
+      await this.useToken(token);
     } catch (err) {
       this.failLogin(login, err.message);
     }
+  }
+
+  // Sign in with a token pasted by the user (the web version can't use the
+  // device flow). Needs the `gist` scope.
+  async signInWithToken(token) {
+    token = token.trim();
+    if (!token) throw new Error("Paste a GitHub token first.");
+    try {
+      await this.useToken(token);
+    } catch (err) {
+      throw new Error(err.signedOut ? "GitHub didn't accept that token." : err.message);
+    }
+  }
+
+  async useToken(token) {
+    const user = await this.api(token, "GET", "/user");
+    const gistId = await this.findGist(token);
+    this.auth = { token, login: user.login, gistId };
+    await this.saveAuth(this.auth);
+    this.deviceLogin = null;
+    this.state.error = null;
+    this.emit();
+    await this.sync();
   }
 
   async signOut() {

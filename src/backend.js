@@ -95,6 +95,7 @@ window.addEventListener("focus", () => {
 const errorText = (err) => (typeof err === "string" ? err : err?.message || String(err));
 
 window.api = {
+  features: { deviceLogin: true, tokenLogin: true, revealData: true },
   platform: navigator.userAgent.includes("Mac") ? "darwin" : navigator.userAgent.includes("Windows") ? "win32" : "linux",
 
   async getState() {
@@ -169,6 +170,7 @@ window.api = {
 
   sync: {
     login: () => sync.startLogin(),
+    loginWithToken: (token) => sync.signInWithToken(token),
     cancel: () => sync.cancelLogin(),
     signOut: () => sync.signOut(),
     now: () => sync.sync(),

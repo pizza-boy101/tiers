@@ -35,7 +35,10 @@
         <span>Sun</span><span>Mon</span><span>Tue</span><span>Wed</span><span>Thu</span><span>Fri</span><span>Sat</span>
       </div>
       <div class="cal-grid" id="cal-days"></div>
-      <button class="btn small" id="cal-today" type="button">Today</button>
+      <div class="cal-foot">
+        <button class="btn small" id="cal-today" type="button">Today</button>
+        <button class="btn small ghost" id="cal-toggle" type="button"></button>
+      </div>
       <div class="legend"><span id="tier-legend"></span><button class="link" id="legend-edit" type="button">Edit tiers</button></div>
     </section>
 
@@ -114,7 +117,7 @@
       </label>
       <p class="muted small" id="key-status"></p>
       <label>Model for suggestions<select name="model"></select></label>
-      <p class="muted small">The key is encrypted with your system keychain, stays on this computer, and is only sent to the Anthropic API.</p>
+      <p class="muted small">The key stays on this device and is only sent to the Anthropic API.</p>
       <hr>
       <h3>Sync between computers</h3>
       <div id="sync-settings"></div>
@@ -123,7 +126,7 @@
       </label>
       <hr>
       <h3>Your data</h3>
-      <p class="muted small">Everything is saved on this computer in <code id="data-dir"></code>.</p>
+      <p class="muted small" id="data-where">Everything is saved on this computer in <code id="data-dir"></code>.</p>
       <div class="row">
         <button class="btn" type="button" id="export-btn">Export backup…</button>
         <button class="btn" type="button" id="import-btn">Import backup…</button>

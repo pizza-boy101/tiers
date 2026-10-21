@@ -94,3 +94,21 @@ test("two devices sync through one private gist", async () => {
   assert.equal(a.sync.status().signedIn, false);
   assert.equal(a.store.db.tasks.length, 1);
 });
+
+test("a pasted token signs in and finds the existing gist", async () => {
+  const github = fakeGitHub();
+  const a = device(github);
+  const phone = device(github);
+  await a.store.load();
+  await phone.store.load();
+  await addTask(a.store, "a1", "From the desktop");
+  await signIn(a);
+
+  await assert.rejects(phone.sync.signInWithToken("wrong"), /didn't accept that token/);
+  assert.equal(phone.sync.status().signedIn, false);
+
+  await phone.sync.signInWithToken("  tok  ");
+  assert.equal(phone.sync.status().signedIn, true);
+  assert.equal(github.gists.size, 1);
+  assert.deepEqual(phone.store.db.tasks.map((t) => t.id), ["a1"]);
+});

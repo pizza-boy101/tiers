@@ -183,7 +183,9 @@ textarea { resize: vertical; }
   margin-top: -2px;
 }
 .cal-day.today.all-done:not(.selected) .num { box-shadow: 0 0 0 2px var(--panel), 0 0 0 3.5px var(--text); }
-#cal-today { align-self: flex-start; }
+.cal-foot { display: flex; gap: 6px; }
+#cal-toggle { display: none; }
+.calendar-panel.week-view .cal-day:not(.sel-week) { display: none; }
 
 .legend { margin-top: auto; display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
 #tier-legend { display: flex; flex-wrap: wrap; gap: 6px 12px; }
@@ -267,7 +269,7 @@ textarea { resize: vertical; }
 .task .note-mark { color: var(--muted); font-size: 12px; }
 .task .actions { display: flex; gap: 2px; opacity: 0; transition: opacity 0.1s; }
 .task:hover .actions, .task:focus-within .actions { opacity: 1; }
-.task .actions button { height: 26px; padding: 0 8px; font-size: 12px; border-radius: 7px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
+.task .actions button { display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 8px; font-size: 12px; border-radius: 7px; border: 0; background: transparent; color: var(--muted); cursor: pointer; }
 .task .actions button:hover { background: var(--panel); color: var(--text); }
 
 .add-inline { display: flex; padding: 2px 8px 2px 38px; }
@@ -391,3 +393,78 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 @media (max-width: 1100px) {
   .layout { grid-template-columns: 300px minmax(0, 1fr); }
 }
+
+/* ---------- Touch screens ---------- */
+@media (hover: none) {
+  .task .actions { opacity: 1; }
+  .task .actions button { background: var(--panel-2); }
+  .task { cursor: default; }
+}
+
+/* ---------- Phones ---------- */
+@media (max-width: 720px) {
+  body { overflow: auto; overflow-x: hidden; display: block; min-height: 100%; }
+  input[type="text"], input[type="password"], input[type="date"], select, textarea { font-size: 16px; }
+
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: var(--bg);
+    padding: calc(env(safe-area-inset-top) + 8px) calc(env(safe-area-inset-right) + 12px) 8px calc(env(safe-area-inset-left) + 12px);
+  }
+  .sync-chip #sync-chip-label { display: none; }
+  .sync-chip { padding: 0 8px; }
+
+  .layout {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0 calc(env(safe-area-inset-right) + 10px) calc(env(safe-area-inset-bottom) + 24px) calc(env(safe-area-inset-left) + 10px);
+  }
+  .panel { overflow: visible; padding: 14px; }
+
+  .calendar-panel { gap: 6px; }
+  .cal-day { aspect-ratio: auto; min-height: 44px; }
+  .cal-day .num { font-size: 13px; }
+  #cal-toggle { display: inline-flex; }
+  .legend { display: none; }
+
+  .day-panel { padding: 16px 14px; gap: 14px; }
+  h1 { font-size: 19px; }
+  .suggest-row { flex-direction: column; }
+  .suggest-row .btn, .suggest-row input { width: 100%; min-width: 0; }
+  .suggest-row .btn { height: 40px; }
+
+  .task { padding: 6px 2px; gap: 10px; }
+  .task .check { width: 24px; height: 24px; }
+  .task .actions { gap: 4px; }
+  .task .actions button { width: 34px; height: 34px; padding: 0; justify-content: center; }
+  .task.day .actions .label { display: none; }
+  .task.backlog .actions button { width: auto; padding: 0 10px; }
+  .add-inline { padding-left: 34px; }
+  .tier-pill { padding: 5px 12px 5px 10px; font-size: 14px; }
+
+  .add-backlog { flex-wrap: wrap; }
+  .add-backlog select { max-width: none; flex: 1 1 100%; }
+
+  /* The Backlog / Tiers / Settings window fills the screen */
+  .panel-dialog {
+    width: 100vw;
+    height: 100dvh;
+    max-width: none;
+    max-height: none;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+  }
+  .panel-dialog .tabs { padding-top: calc(env(safe-area-inset-top) + 6px); padding-left: 10px; }
+  .panel-dialog .dialog-body { padding: 16px 14px calc(env(safe-area-inset-bottom) + 20px); }
+  dialog:not(.panel-dialog) { width: calc(100vw - 20px); }
+  .dialog-actions { flex-wrap: wrap; }
+  .toast { bottom: calc(env(safe-area-inset-bottom) + 16px); max-width: calc(100vw - 32px); }
+}
+
+.token-details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-top: 4px; }
+.token-details[open] summary { margin-bottom: 8px; }
+.token-row input { flex: 1; min-width: 0; }

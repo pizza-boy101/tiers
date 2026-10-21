@@ -1,4 +1,6 @@
 const api = window.api;
+const features = api.features || { deviceLogin: true, tokenLogin: false, revealData: true };
+const TOKEN_URL = "https://github.com/settings/tokens/new?scopes=gist&description=Tiers%20sync";
 document.documentElement.classList.add(`platform-${api.platform}`);
 
 const MODEL_LABELS = {
@@ -6,6 +8,8 @@ const MODEL_LABELS = {
   "claude-sonnet-5-5": "Claude Sonnet 5.5 (faster, cheaper)",
   "claude-haiku-5-5": "Claude Haiku 5.5 (fastest, cheapest)",
 };
+const ICON_NEXT = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+const ICON_BACKLOG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/></svg>';
 const TIER_PALETTE = ["#e5484d", "#f5a524", "#3e9b4f", "#3e7bfa", "#8e4ec6", "#12a594", "#e93d82", "#978365"];
 
 let state = { tiers: [], tasks: [], settings: {}, sync: {} };
@@ -14,6 +18,7 @@ const ui = {
   selected: isoDate(new Date()),
   month: startOfMonth(new Date()),
   addTier: null, // tier id whose inline add field is open in the day view
+  weekView: matchMedia("(max-width: 720px)").matches, // phones start with a one-week calendar strip
   suggest: { loading: false, error: null, summary: null, items: [] },
   dragId: null,
 };
@@ -200,6 +205,9 @@ function renderCalendar() {
 
   const start = new Date(month);
   start.setDate(1 - month.getDay());
+  const selectedWeek = Math.floor(Math.round((parseIso(ui.selected) - start) / 86_400_000) / 7);
+  $(".calendar-panel").classList.toggle("week-view", ui.weekView);
+  $("#cal-toggle").textContent = ui.weekView ? "Show month" : "Show week";
   const cells = [];
   for (let i = 0; i < 42; i++) {
     const d = new Date(start);
@@ -210,6 +218,7 @@ function renderCalendar() {
     if (d.getMonth() !== month.getMonth()) classes.push("other");
     if (iso === today()) classes.push("today");
     if (iso === ui.selected) classes.push("selected");
+    if (Math.floor(i / 7) === selectedWeek) classes.push("sel-week");
     const allDone = tasks.length > 0 && tasks.every((t) => t.done);
     if (allDone) classes.push("all-done");
     const dots = allDone ? "" : tasks.slice(0, 8).map((t) =>
@@ -239,8 +248,8 @@ function sealGradient(tasks) {
 function taskRow(task, zone) {
   const tier = tierById(task.tierId);
   const actions = zone === "day"
-    ? `<button type="button" data-act="tomorrow" title="Move to the next day">Next day</button>
-       <button type="button" data-act="backlog" title="Send back to the backlog">Backlog</button>`
+    ? `<button type="button" data-act="tomorrow" title="Move to the next day" aria-label="Move to the next day">${ICON_NEXT}<span class="label">Next day</span></button>
+       <button type="button" data-act="backlog" title="Send back to the backlog" aria-label="Send back to the backlog">${ICON_BACKLOG}<span class="label">Backlog</span></button>`
     : `<button type="button" data-act="schedule" title="Schedule on the selected day">→ ${esc(dayLabel(ui.selected, { short: true }))}</button>`;
   const check = zone === "day"
     ? `<button type="button" class="check" data-act="toggle" aria-label="${task.done ? "Mark not done" : "Mark done"}">${task.done ? "✓" : ""}</button>`
@@ -296,7 +305,7 @@ function renderDay() {
 function renderBacklog() {
   const backlog = state.tasks.filter((t) => !t.date);
   $("#backlog-count").textContent = backlog.length || "";
-  $("#backlog-hint").textContent = `Click + on a task to put it on ${dayLabel(ui.selected) === "today" ? "today" : parseIso(ui.selected).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}.`;
+  $("#backlog-hint").textContent = `${matchMedia("(hover: none)").matches ? "Tap" : "Click"} + on a task to put it on ${dayLabel(ui.selected) === "today" ? "today" : parseIso(ui.selected).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}.`;
 
   const select = $("#backlog-tier");
   const current = select.value;
@@ -384,7 +393,7 @@ function renderSyncChip() {
 function renderSyncSettings() {
   const s = state.sync;
   const box = $("#sync-settings");
-  $("#client-id-row").hidden = state.settings.builtInClientId || s.signedIn;
+  $("#client-id-row").hidden = !features.deviceLogin || state.settings.builtInClientId || s.signedIn;
   if (s.signedIn) {
     box.innerHTML = `
       <p class="small">Signed in as <strong>${esc(s.login)}</strong>. ${s.lastSyncAt ? `Last synced ${timeAgo(s.lastSyncAt)}.` : ""}</p>
@@ -402,11 +411,24 @@ function renderSyncSettings() {
       <p class="muted small">Waiting for you to approve…</p>
       <div class="row"><button class="btn ghost small" type="button" data-sync="cancel">Cancel</button></div>`;
   } else {
+    const tokenForm = `
+      <p class="muted small">Create a GitHub token with the <strong>gist</strong> scope, then paste it here.</p>
+      <div class="row">
+        <button class="btn small" type="button" data-sync="token-page">Create a token</button>
+      </div>
+      <div class="row token-row">
+        <input id="sync-token" type="password" autocomplete="off" placeholder="ghp_…" aria-label="GitHub token">
+        <button class="btn primary" type="button" data-sync="token">Connect</button>
+      </div>`;
     box.innerHTML = `
-      <p class="muted small">Sign in on each computer to keep your tasks in sync. Your data is stored in a private Gist on your GitHub account.</p>
+      <p class="muted small">Sign in on each device to keep your tasks in sync. Your data is stored in a private Gist on your GitHub account.</p>
       ${s.error ? `<p class="suggest-error">${esc(s.error)}</p>` : ""}
-      <div class="row"><button class="btn" type="button" data-sync="login">Sign in with GitHub</button></div>
-      ${state.settings.builtInClientId ? "" : '<p class="muted small">Needs a GitHub OAuth client ID, pasted below (see the README).</p>'}`;
+      ${features.deviceLogin ? `
+        <div class="row"><button class="btn" type="button" data-sync="login">Sign in with GitHub</button></div>
+        ${state.settings.builtInClientId ? "" : '<p class="muted small">Needs a GitHub OAuth client ID, pasted below (see the README).</p>'}` : ""}
+      ${features.tokenLogin && features.deviceLogin
+        ? `<details class="token-details"><summary>Or use a GitHub token instead</summary>${tokenForm}</details>`
+        : features.tokenLogin ? tokenForm : ""}`;
   }
 }
 
@@ -489,7 +511,10 @@ function openPanel(tab = "settings") {
   for (const btn of dlg.querySelectorAll('[role="tab"]')) btn.setAttribute("aria-selected", String(btn.dataset.tab === tab));
   for (const pane of dlg.querySelectorAll("[data-pane]")) pane.hidden = pane.dataset.pane !== tab;
   if (tab === "tiers") renderTierList();
+  // Refill the settings form each time the window opens, but not when just
+  // switching tabs, so unsaved typing survives a look at another tab.
   if (tab === "settings" && (!dlg.open || dlg.dataset.filled !== "1")) fillSettings();
+  if (!dlg.open && tab !== "settings") dlg.dataset.filled = "";
   if (!dlg.open) dlg.showModal();
   if (tab === "backlog") $("#backlog-input").focus();
 }
@@ -511,19 +536,43 @@ function fillSettings() {
   form.githubClientId.value = s.githubClientId || "";
   renderSyncSettings();
   $("#data-dir").textContent = s.dataDir || "";
+  $("#data-where").hidden = !s.dataDir;
+  $("#reveal-btn").hidden = !features.revealData;
 }
 
 // ---------- events ----------
 
 function bindEvents() {
+  // In the week strip, the arrows move a week; in the month grid, a month.
   $("#cal-prev").onclick = () => {
+    if (ui.weekView) return selectDay(addDays(ui.selected, -7));
     ui.month = new Date(ui.month.getFullYear(), ui.month.getMonth() - 1, 1);
     renderCalendar();
   };
   $("#cal-next").onclick = () => {
+    if (ui.weekView) return selectDay(addDays(ui.selected, 7));
     ui.month = new Date(ui.month.getFullYear(), ui.month.getMonth() + 1, 1);
     renderCalendar();
   };
+  $("#cal-toggle").onclick = () => {
+    ui.weekView = !ui.weekView;
+    const d = parseIso(ui.selected);
+    ui.month = startOfMonth(d);
+    renderCalendar();
+  };
+
+  // Swipe left / right on the day to move between days (touch screens).
+  let touch = null;
+  $(".day-panel").addEventListener("touchstart", (e) => {
+    touch = e.target.closest("input, textarea, select, .suggest-box") ? null : { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }, { passive: true });
+  $(".day-panel").addEventListener("touchend", (e) => {
+    if (!touch) return;
+    const dx = e.changedTouches[0].clientX - touch.x;
+    const dy = e.changedTouches[0].clientY - touch.y;
+    touch = null;
+    if (Math.abs(dx) > 70 && Math.abs(dy) < 50) selectDay(addDays(ui.selected, dx < 0 ? 1 : -1));
+  });
   $("#cal-today").onclick = () => selectDay(today());
   $("#cal-days").onclick = (e) => {
     const cell = e.target.closest("[data-date]");
@@ -755,8 +804,10 @@ function bindDialogs() {
   };
 
   // Task edit
-  $("#task-dialog").addEventListener("close", () => {
-    if ($("#task-dialog").returnValue === "save") saveTaskDialog();
+  // Save on submit (the Save button), not on the dialog's close event,
+  // which some browsers don't always deliver.
+  $("#task-form").addEventListener("submit", (e) => {
+    if (e.submitter?.value === "save") saveTaskDialog();
   });
   $("#task-form").backlog.onchange = (e) => {
     $("#task-form").date.disabled = e.target.checked;
@@ -776,9 +827,8 @@ function bindDialogs() {
     const tab = e.target.closest('[role="tab"]');
     if (tab) openPanel(tab.dataset.tab);
   });
-  $("#settings-dialog").addEventListener("close", async () => {
-    $("#settings-dialog").dataset.filled = "";
-    if ($("#settings-dialog").returnValue !== "save") return;
+  $("#settings-form").addEventListener("submit", async (e) => {
+    if (e.submitter?.value !== "save") return;
     const form = $("#settings-form");
     const patch = { model: form.model.value };
     if (!state.settings.builtInClientId) patch.githubClientId = form.githubClientId.value;
@@ -813,6 +863,12 @@ function bindDialogs() {
   $("#reveal-btn").onclick = () => api.revealData();
 
   $("#sync-chip").onclick = () => openPanel("settings");
+  $("#sync-settings").addEventListener("keydown", (e) => {
+    if (e.key === "Enter" && e.target.id === "sync-token") {
+      e.preventDefault();
+      $('[data-sync="token"]').click();
+    }
+  });
   $("#sync-settings").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-sync]");
     if (!btn) return;
@@ -828,6 +884,16 @@ function bindDialogs() {
             if (id !== state.settings.githubClientId) state.settings = await api.saveSettings({ githubClientId: id });
           }
           await api.sync.login();
+          break;
+        case "token-page": await api.openUrl(TOKEN_URL); break;
+        case "token":
+          btn.disabled = true;
+          try {
+            await api.sync.loginWithToken($("#sync-token").value);
+            toast("Connected. Your tasks will sync.");
+          } finally {
+            btn.disabled = false;
+          }
           break;
         case "open": await api.openUrl(state.sync.pendingCode.url); break;
         case "cancel": await api.sync.cancel(); break;

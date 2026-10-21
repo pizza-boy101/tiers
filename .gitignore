@@ -4,3 +4,4 @@ dist/
 public/backend.js
 src-tauri/target/
 src-tauri/gen/
+dist-web/

@@ -10,7 +10,8 @@
     "dist": "tauri build",
     "dist:mac": "tauri build --target universal-apple-darwin",
     "dist:win": "tauri build --target x86_64-pc-windows-msvc",
-    "test": "node --test"
+    "test": "node --test",
+    "build:web": "node scripts/build-web.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.137.0",
