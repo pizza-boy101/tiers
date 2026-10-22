@@ -1,6 +1,6 @@
 {
   "name": "tiers",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "private": true,
   "type": "module",
   "description": "A todo app with your own tiers, a backlog, and one-click suggestions from Claude.",
