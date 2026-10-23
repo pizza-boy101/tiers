@@ -137,6 +137,12 @@ async fn import_backup(app: AppHandle) -> Result<Option<String>, String> {
     fs::read_to_string(path).map(Some).map_err(|e| e.to_string())
 }
 
+// Updates are skipped in debug builds.
+#[tauri::command]
+fn is_debug_build() -> bool {
+    cfg!(debug_assertions)
+}
+
 // Debug builds only: run a script in the page and write its result to a file,
 // so the app can be tested end to end from the command line.
 #[cfg(debug_assertions)]
@@ -159,7 +165,11 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_http::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init());
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_process::init());
+
+    #[cfg(desktop)]
+    let builder = builder.plugin(tauri_plugin_updater::Builder::new().build());
 
     #[cfg(debug_assertions)]
     let builder = builder
@@ -174,13 +184,13 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             read_data, write_data, data_dir_path, open_data_dir, open_url,
-            get_secret, set_secret, delete_secret, confirm, export_backup, import_backup, smoke_done
+            get_secret, set_secret, delete_secret, confirm, export_backup, import_backup, is_debug_build, smoke_done
         ]);
 
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         read_data, write_data, data_dir_path, open_data_dir, open_url,
-        get_secret, set_secret, delete_secret, confirm, export_backup, import_backup
+        get_secret, set_secret, delete_secret, confirm, export_backup, import_backup, is_debug_build
     ]);
 
     builder

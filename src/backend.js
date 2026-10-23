@@ -8,6 +8,7 @@ import { GITHUB_CLIENT_ID } from "./config.js";
 import { Store, isValidDb } from "./store.js";
 import { suggestFromBacklog } from "./suggest.js";
 import { GitHubSync } from "./sync.js";
+import { startUpdater, updates } from "./updater.js";
 
 const DEFAULT_MODEL = "claude-opus-5-5";
 const MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
@@ -82,6 +83,8 @@ const ready = (async () => {
   await store.load();
   await sync.init();
 })();
+
+startUpdater().catch((err) => console.error("Updater failed to start:", err));
 
 // Pull changes from other devices when you come back to the app.
 let lastFocusSync = 0;
@@ -166,6 +169,7 @@ window.api = {
   },
 
   revealData: () => invoke("open_data_dir"),
+  updates,
   openUrl: (url) => invoke("open_url", { url }),
 
   sync: {

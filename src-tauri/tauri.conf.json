@@ -29,6 +29,7 @@
   "bundle": {
     "active": true,
     "targets": [
+      "app",
       "dmg",
       "nsis"
     ],
@@ -51,6 +52,17 @@
       },
       "webviewInstallMode": {
         "type": "downloadBootstrapper"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhBQzdENjhFNEFDMTYzQzYKUldUR1k4RktqdGJIaWkwNEtpT3dvemNLdURneGxHMGFHL01uVjB4eEdCWmNNRit5anRIODFaZDEK",
+      "endpoints": [
+        "https://github.com/pizza-boy101/tiers/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
       }
     }
   }

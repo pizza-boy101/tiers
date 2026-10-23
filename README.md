@@ -21,6 +21,15 @@ The builds aren't code-signed, so the first launch needs one extra click:
 - **Mac:** right-click the app, choose **Open**, then **Open** again.
 - **Windows:** on the SmartScreen warning, click **More info**, then **Run anyway**.
 
+### Updates
+
+The desktop app updates itself. It checks GitHub at launch and every few hours, downloads new versions in the background, and checks they're signed by this project before installing.
+
+- **Mac:** installs right away; you get the new version the next time you open the app (or click **Restart to update**).
+- **Windows:** installs when you close the app (or click **Restart to update**).
+
+Settings shows your version and has a **Check for updates** button.
+
 ## iPhone (and any phone)
 
 Tiers also runs as a web app you can add to your home screen: **https://pizza-boy101.github.io/tiers/**
@@ -65,7 +74,11 @@ npm run build:web    # build the web app into dist-web/
 
 The web app deploys to GitHub Pages on every push to `main` (`.github/workflows/pages.yml`).
 
-The Windows installer is built by GitHub Actions (`.github/workflows/build.yml`). Run it from the Actions tab, or push a `v*` tag, and download the installers from the run.
+### Releases
+
+Every push to `main` that changes the app (`public/`, `src/`, `src-tauri/`, or the package files) builds a new version on GitHub Actions and publishes it as a release (`.github/workflows/release.yml`). Versions are `major.minor` from `src-tauri/tauri.conf.json` plus the workflow's run number, so each release is newer than the last. To start a new minor version, change `major.minor` there.
+
+Updates are signed. The signing key is stored in the repo's Actions secrets (`TAURI_SIGNING_PRIVATE_KEY` and `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`), and the matching public key is in `tauri.conf.json`. Keep a copy of the private key safe: without it, installed apps can't accept new updates.
 
 ## Shortcuts
 

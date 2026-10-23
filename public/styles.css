@@ -82,6 +82,18 @@ code { font-size: 12px; background: var(--panel-2); padding: 1px 5px; border-rad
   font-size: 12px;
   cursor: pointer;
 }
+.update-chip {
+  height: 28px;
+  padding: 0 12px;
+  margin-right: 4px;
+  border-radius: 999px;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+}
 .sync-chip.busy svg { animation: pulse 1s ease-in-out infinite alternate; }
 .sync-chip.error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 @keyframes pulse { to { opacity: 0.35; } }

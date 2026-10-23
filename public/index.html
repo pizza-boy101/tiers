@@ -13,6 +13,7 @@
       <span>Tiers</span>
     </div>
     <div class="topbar-actions">
+      <button class="update-chip" id="update-chip" type="button" hidden>Restart to update</button>
       <button class="sync-chip" id="sync-chip" type="button" hidden>
         <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17.5 19a4.5 4.5 0 1 0-1.4-8.8A6 6 0 0 0 4.5 12.5 3.5 3.5 0 0 0 7 19z"/></svg>
         <span id="sync-chip-label"></span>
@@ -124,6 +125,11 @@
       <label id="client-id-row">GitHub OAuth client ID
         <input name="githubClientId" type="text" autocomplete="off" placeholder="Ov23li…">
       </label>
+      <div id="update-section" hidden>
+        <hr>
+        <h3>Updates</h3>
+        <div id="update-settings"></div>
+      </div>
       <hr>
       <h3>Your data</h3>
       <p class="muted small" id="data-where">Everything is saved on this computer in <code id="data-dir"></code>.</p>

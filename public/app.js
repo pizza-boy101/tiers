@@ -438,6 +438,40 @@ function applySyncStatus(status) {
   if ($("#settings-dialog").open) renderSyncSettings();
 }
 
+// ---------- updates (desktop) ----------
+
+function renderUpdateChip() {
+  const u = state.updates;
+  const chip = $("#update-chip");
+  chip.hidden = !u || !["ready", "installed"].includes(u.state);
+  if (!chip.hidden) chip.title = `Tiers ${u.available} is ready`;
+}
+
+function renderUpdateSettings() {
+  const u = state.updates;
+  $("#update-section").hidden = !u;
+  if (!u) return;
+  const checkBtn = '<button class="btn small" type="button" data-update="check">Check for updates</button>';
+  const restartBtn = '<button class="btn small primary" type="button" data-update="restart">Restart now</button>';
+  const version = u.current ? `Tiers ${esc(u.current)}` : "Tiers";
+  const lines = {
+    disabled: [`${version}. Updates are off in development builds.`, ""],
+    idle: [`${version}. ${u.checkedAt ? "You're up to date." : "Updates install automatically."}`, checkBtn],
+    checking: ["Checking for updates…", ""],
+    downloading: [`Downloading Tiers ${esc(u.available)}…`, ""],
+    ready: [`Tiers ${esc(u.available)} is ready. It installs when you close the app.`, restartBtn],
+    installed: [`Tiers ${esc(u.available)} is installed. It starts the next time you open the app.`, restartBtn],
+    error: [`Couldn't update: ${esc(u.error || "unknown error")}`, checkBtn.replace("Check for updates", "Try again")],
+  }[u.state] || [version, checkBtn];
+  $("#update-settings").innerHTML = `<p class="small">${lines[0]}</p>${lines[1] ? `<div class="row">${lines[1]}</div>` : ""}`;
+}
+
+function applyUpdateStatus(status) {
+  state.updates = status;
+  renderUpdateChip();
+  if ($("#settings-dialog").open) renderUpdateSettings();
+}
+
 // ---------- suggestions ----------
 
 async function requestSuggestions() {
@@ -535,6 +569,7 @@ function fillSettings() {
   $("#clear-key").hidden = s.apiKeySource !== "app";
   form.githubClientId.value = s.githubClientId || "";
   renderSyncSettings();
+  renderUpdateSettings();
   $("#data-dir").textContent = s.dataDir || "";
   $("#data-where").hidden = !s.dataDir;
   $("#reveal-btn").hidden = !features.revealData;
@@ -863,6 +898,20 @@ function bindDialogs() {
   $("#reveal-btn").onclick = () => api.revealData();
 
   $("#sync-chip").onclick = () => openPanel("settings");
+  $("#update-chip").onclick = () => api.updates.restart().catch((err) => toast(errText(err)));
+  $("#update-settings").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-update]");
+    if (!btn) return;
+    try {
+      if (btn.dataset.update === "restart") await api.updates.restart();
+      else {
+        const result = await api.updates.check();
+        if (result.state === "idle") toast("You're on the latest version.");
+      }
+    } catch (err) {
+      toast(errText(err));
+    }
+  });
   $("#sync-settings").addEventListener("keydown", (e) => {
     if (e.key === "Enter" && e.target.id === "sync-token") {
       e.preventDefault();
@@ -922,6 +971,10 @@ async function boot() {
   setInterval(renderSyncChip, 30_000);
 
   api.sync.onStatus(applySyncStatus);
+  if (api.updates) {
+    applyUpdateStatus(api.updates.getStatus());
+    api.updates.onStatus(applyUpdateStatus);
+  }
   // Changes merged in from another device. If you're mid-edit, the next save
   // merges against them instead, so nothing is lost either way.
   api.onStateChanged((view) => {
