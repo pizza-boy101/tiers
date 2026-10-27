@@ -1,6 +1,5 @@
 const api = window.api;
-const features = api.features || { deviceLogin: true, tokenLogin: false, revealData: true };
-const TOKEN_URL = "https://github.com/settings/tokens/new?scopes=gist&description=Tiers%20sync";
+const features = api.features || { revealData: true };
 document.documentElement.classList.add(`platform-${api.platform}`);
 
 const MODEL_LABELS = {
@@ -387,13 +386,12 @@ function renderSyncChip() {
   $("#sync-chip-label").textContent = s.error
     ? "Sync problem"
     : s.syncing ? "Syncing…" : s.lastSyncAt ? `Synced ${timeAgo(s.lastSyncAt)}` : "Sync on";
-  chip.title = s.error || (s.login ? `Signed in to GitHub as ${s.login}` : "");
+  chip.title = s.error || (s.login ? `Signed in as ${s.login}` : "");
 }
 
 function renderSyncSettings() {
   const s = state.sync;
   const box = $("#sync-settings");
-  $("#client-id-row").hidden = !features.deviceLogin || state.settings.builtInClientId || s.signedIn;
   if (s.signedIn) {
     box.innerHTML = `
       <p class="small">Signed in as <strong>${esc(s.login)}</strong>. ${s.lastSyncAt ? `Last synced ${timeAgo(s.lastSyncAt)}.` : ""}</p>
@@ -402,33 +400,15 @@ function renderSyncSettings() {
         <button class="btn" type="button" data-sync="now">${s.syncing ? "Syncing…" : "Sync now"}</button>
         <button class="btn ghost" type="button" data-sync="signout">Sign out</button>
       </div>`;
-  } else if (s.pendingCode) {
+  } else if (s.signingIn) {
     box.innerHTML = `
-      <p class="small">Enter this code on the GitHub page that just opened:</p>
-      <div class="row"><code class="device-code">${esc(s.pendingCode.userCode)}</code>
-        <button class="btn small" type="button" data-sync="copy">Copy</button>
-        <button class="btn small ghost" type="button" data-sync="open">Open GitHub</button></div>
-      <p class="muted small">Waiting for you to approve…</p>
+      <p class="small">${api.platform === "web" ? "Finish signing in with Google in the window that opened." : "Finish signing in with Google in your browser, then come back here."}</p>
       <div class="row"><button class="btn ghost small" type="button" data-sync="cancel">Cancel</button></div>`;
   } else {
-    const tokenForm = `
-      <p class="muted small">Create a GitHub token with the <strong>gist</strong> scope, then paste it here.</p>
-      <div class="row">
-        <button class="btn small" type="button" data-sync="token-page">Create a token</button>
-      </div>
-      <div class="row token-row">
-        <input id="sync-token" type="password" autocomplete="off" placeholder="ghp_…" aria-label="GitHub token">
-        <button class="btn primary" type="button" data-sync="token">Connect</button>
-      </div>`;
     box.innerHTML = `
-      <p class="muted small">Sign in on each device to keep your tasks in sync. Your data is stored in a private Gist on your GitHub account.</p>
+      <p class="muted small">Sign in with the same Google account on each device to keep your tasks in sync.</p>
       ${s.error ? `<p class="suggest-error">${esc(s.error)}</p>` : ""}
-      ${features.deviceLogin ? `
-        <div class="row"><button class="btn" type="button" data-sync="login">Sign in with GitHub</button></div>
-        ${state.settings.builtInClientId ? "" : '<p class="muted small">Needs a GitHub OAuth client ID, pasted below (see the README).</p>'}` : ""}
-      ${features.tokenLogin && features.deviceLogin
-        ? `<details class="token-details"><summary>Or use a GitHub token instead</summary>${tokenForm}</details>`
-        : features.tokenLogin ? tokenForm : ""}`;
+      <div class="row"><button class="btn primary" type="button" data-sync="login">Sign in with Google</button></div>`;
   }
 }
 
@@ -567,7 +547,6 @@ function fillSettings() {
   form.model.innerHTML = (s.models || []).map((m) => `<option value="${m}">${MODEL_LABELS[m] || m}</option>`).join("");
   form.model.value = s.model;
   $("#clear-key").hidden = s.apiKeySource !== "app";
-  form.githubClientId.value = s.githubClientId || "";
   renderSyncSettings();
   renderUpdateSettings();
   $("#data-dir").textContent = s.dataDir || "";
@@ -866,7 +845,6 @@ function bindDialogs() {
     if (e.submitter?.value !== "save") return;
     const form = $("#settings-form");
     const patch = { model: form.model.value };
-    if (!state.settings.builtInClientId) patch.githubClientId = form.githubClientId.value;
     if (form.apiKey.value.trim()) patch.apiKey = form.apiKey.value.trim();
     state.settings = await api.saveSettings(patch);
     if (patch.apiKey) toast("API key saved. Suggestions are on.");
@@ -912,46 +890,18 @@ function bindDialogs() {
       toast(errText(err));
     }
   });
-  $("#sync-settings").addEventListener("keydown", (e) => {
-    if (e.key === "Enter" && e.target.id === "sync-token") {
-      e.preventDefault();
-      $('[data-sync="token"]').click();
-    }
-  });
   $("#sync-settings").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-sync]");
     if (!btn) return;
     try {
       switch (btn.dataset.sync) {
         case "login":
-          if (!state.settings.builtInClientId) {
-            const id = $("#settings-form").githubClientId.value.trim();
-            if (!id) {
-              toast("Paste a GitHub OAuth client ID first.");
-              break;
-            }
-            if (id !== state.settings.githubClientId) state.settings = await api.saveSettings({ githubClientId: id });
-          }
           await api.sync.login();
+          if (state.sync.signedIn) toast("Signed in. Your tasks will sync.");
           break;
-        case "token-page": await api.openUrl(TOKEN_URL); break;
-        case "token":
-          btn.disabled = true;
-          try {
-            await api.sync.loginWithToken($("#sync-token").value);
-            toast("Connected. Your tasks will sync.");
-          } finally {
-            btn.disabled = false;
-          }
-          break;
-        case "open": await api.openUrl(state.sync.pendingCode.url); break;
         case "cancel": await api.sync.cancel(); break;
         case "signout": await api.sync.signOut(); break;
         case "now": await api.sync.now(); break;
-        case "copy":
-          await navigator.clipboard.writeText(state.sync.pendingCode.userCode)
-            .then(() => toast("Code copied."), () => toast("Couldn't copy. Select the code and copy it instead."));
-          break;
       }
     } catch (err) {
       toast(errText(err));

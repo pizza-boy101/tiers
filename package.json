@@ -10,8 +10,9 @@
     "dist": "tauri build",
     "dist:mac": "tauri build --target universal-apple-darwin",
     "dist:win": "tauri build --target x86_64-pc-windows-msvc",
-    "test": "node --test",
-    "build:web": "node scripts/build-web.mjs"
+    "test": "node --test test/*.test.js",
+    "build:web": "node scripts/build-web.mjs",
+    "test:cloud": "npx -y firebase-tools@13.35.1 emulators:exec --only auth,firestore --project demo-tiers \"node --test test/cloud/*.test.js\""
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.137.0",
@@ -19,6 +20,7 @@
     "@tauri-apps/plugin-http": "^2.8.3",
     "@tauri-apps/plugin-process": "^2.4.0",
     "@tauri-apps/plugin-updater": "^2.14.0",
+    "firebase": "^13.1.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {

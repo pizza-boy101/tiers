@@ -1,4 +1,11 @@
-use std::{fs, io::ErrorKind, path::PathBuf};
+use std::{
+    fs,
+    io::{ErrorKind, Read, Write},
+    net::{TcpListener, TcpStream},
+    path::PathBuf,
+    sync::atomic::{AtomicBool, Ordering},
+    time::{Duration, Instant},
+};
 use tauri::{AppHandle, Manager};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
 use tauri_plugin_opener::OpenerExt;
@@ -137,6 +144,172 @@ async fn import_backup(app: AppHandle) -> Result<Option<String>, String> {
     fs::read_to_string(path).map(Some).map_err(|e| e.to_string())
 }
 
+// ---------- Google sign-in (desktop) ----------
+//
+// Google doesn't allow signing in inside an app's embedded web view, so the
+// app opens the connect page on the website in the user's browser. That page
+// signs in with Google and hands the Google ID token back to a one-time
+// listener on 127.0.0.1, which checks a random `state` value first.
+
+const CONNECT_BASE: &str = "https://pizza-boy101.github.io/tiers/";
+const SIGN_IN_TIMEOUT: Duration = Duration::from_secs(5 * 60);
+static SIGN_IN_CANCELLED: AtomicBool = AtomicBool::new(false);
+
+const CALLBACK_PAGE: &str = r#"<!doctype html><meta charset="utf-8"><title>Tiers</title>
+<body style="font:16px -apple-system,Segoe UI,sans-serif;display:grid;place-items:center;height:90vh;margin:0">
+<p id="m">Finishing sign-in…</p>
+<script>
+fetch("/token", { method: "POST", body: location.hash.slice(1) })
+  .then((r) => { document.getElementById("m").textContent = r.ok ? "You're signed in. You can close this tab and go back to Tiers." : "Sign-in didn't match. Try again from the app."; })
+  .catch(() => { document.getElementById("m").textContent = "Couldn't reach Tiers. Is the app still open?"; });
+history.replaceState(null, "", "/callback");
+</script>"#;
+
+fn connect_base() -> String {
+    #[cfg(debug_assertions)]
+    if let Ok(base) = std::env::var("TIERS_CONNECT_BASE") {
+        return base;
+    }
+    CONNECT_BASE.to_string()
+}
+
+fn random_state() -> Result<String, String> {
+    let mut bytes = [0u8; 16];
+    getrandom::getrandom(&mut bytes).map_err(|e| e.to_string())?;
+    Ok(bytes.iter().map(|b| format!("{b:02x}")).collect())
+}
+
+fn percent_decode(s: &str) -> String {
+    let bytes = s.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'+' => out.push(b' '),
+            b'%' if i + 2 < bytes.len() => {
+                match u8::from_str_radix(&s[i + 1..i + 3], 16) {
+                    Ok(b) => {
+                        out.push(b);
+                        i += 2;
+                    }
+                    Err(_) => out.push(b'%'),
+                }
+            }
+            b => out.push(b),
+        }
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
+fn form_value(body: &str, key: &str) -> Option<String> {
+    body.split('&').find_map(|pair| {
+        let (k, v) = pair.split_once('=')?;
+        (k == key).then(|| percent_decode(v))
+    })
+}
+
+fn respond(stream: &mut TcpStream, status: &str, content_type: &str, body: &str) {
+    let _ = write!(
+        stream,
+        "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n{body}",
+        body.len()
+    );
+}
+
+// Handles one request. Returns the ID token once the browser delivers it.
+fn handle(mut stream: TcpStream, state: &str) -> Option<String> {
+    stream.set_nonblocking(false).ok()?;
+    stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    loop {
+        let n = stream.read(&mut chunk).ok()?;
+        if n == 0 {
+            break;
+        }
+        buf.extend_from_slice(&chunk[..n]);
+        let text = String::from_utf8_lossy(&buf);
+        if let Some(head_end) = text.find("\r\n\r\n") {
+            let length = text[..head_end]
+                .lines()
+                .find_map(|l| l.to_ascii_lowercase().strip_prefix("content-length:").map(|v| v.trim().parse::<usize>().unwrap_or(0)))
+                .unwrap_or(0);
+            if buf.len() >= head_end + 4 + length || buf.len() > 64 * 1024 {
+                break;
+            }
+        }
+    }
+    let text = String::from_utf8_lossy(&buf).into_owned();
+    let request_line = text.lines().next().unwrap_or("");
+    let body = text.split_once("\r\n\r\n").map(|(_, b)| b).unwrap_or("");
+    if request_line.starts_with("GET /callback") {
+        respond(&mut stream, "200 OK", "text/html; charset=utf-8", CALLBACK_PAGE);
+    } else if request_line.starts_with("POST /token") {
+        if form_value(body, "state").as_deref() == Some(state) {
+            if let Some(token) = form_value(body, "id_token").filter(|t| !t.is_empty()) {
+                respond(&mut stream, "200 OK", "text/plain", "ok");
+                return Some(token);
+            }
+        }
+        respond(&mut stream, "400 Bad Request", "text/plain", "state mismatch");
+    } else {
+        respond(&mut stream, "404 Not Found", "text/plain", "not found");
+    }
+    None
+}
+
+#[tauri::command]
+async fn google_sign_in(app: AppHandle) -> Result<String, String> {
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+    let state = random_state()?;
+    listener.set_nonblocking(true).map_err(|e| e.to_string())?;
+    SIGN_IN_CANCELLED.store(false, Ordering::SeqCst);
+
+    let url = format!("{}connect.html?port={port}&state={state}", connect_base());
+    // Debug builds: tests can take the URL from a file instead of a browser opening.
+    #[cfg(debug_assertions)]
+    let opened_for_test = std::env::var("TIERS_CONNECT_URL_FILE").map(|f| fs::write(f, &url).is_ok()).unwrap_or(false);
+    #[cfg(not(debug_assertions))]
+    let opened_for_test = false;
+    if !opened_for_test {
+        app.opener().open_url(url, None::<&str>).map_err(|e| e.to_string())?;
+    }
+
+    tauri::async_runtime::spawn_blocking(move || {
+        let deadline = Instant::now() + SIGN_IN_TIMEOUT;
+        while Instant::now() < deadline {
+            if SIGN_IN_CANCELLED.load(Ordering::SeqCst) {
+                return Err("cancelled".to_string());
+            }
+            match listener.accept() {
+                Ok((stream, _)) => {
+                    if let Some(token) = handle(stream, &state) {
+                        return Ok(token);
+                    }
+                }
+                Err(e) if e.kind() == ErrorKind::WouldBlock => std::thread::sleep(Duration::from_millis(100)),
+                Err(e) => return Err(e.to_string()),
+            }
+        }
+        Err("Sign-in timed out. Try again.".to_string())
+    })
+    .await
+    .map_err(|e| e.to_string())?
+}
+
+#[tauri::command]
+fn cancel_google_sign_in() {
+    SIGN_IN_CANCELLED.store(true, Ordering::SeqCst);
+}
+
+// Debug builds can point at the local Firebase emulators.
+#[tauri::command]
+fn use_firebase_emulator() -> bool {
+    cfg!(debug_assertions) && std::env::var("TIERS_FIREBASE_EMULATOR").is_ok()
+}
+
 // Updates are skipped in debug builds.
 #[tauri::command]
 fn is_debug_build() -> bool {
@@ -184,13 +357,15 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             read_data, write_data, data_dir_path, open_data_dir, open_url,
-            get_secret, set_secret, delete_secret, confirm, export_backup, import_backup, is_debug_build, smoke_done
+            get_secret, set_secret, delete_secret, confirm, export_backup, import_backup, is_debug_build, google_sign_in, cancel_google_sign_in,
+            use_firebase_emulator, smoke_done
         ]);
 
     #[cfg(not(debug_assertions))]
     let builder = builder.invoke_handler(tauri::generate_handler![
         read_data, write_data, data_dir_path, open_data_dir, open_url,
-        get_secret, set_secret, delete_secret, confirm, export_backup, import_backup, is_debug_build
+        get_secret, set_secret, delete_secret, confirm, export_backup, import_backup, is_debug_build, google_sign_in, cancel_google_sign_in,
+        use_firebase_emulator
     ]);
 
     builder

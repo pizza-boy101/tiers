@@ -4,16 +4,17 @@
 
 import { invoke } from "@tauri-apps/api/core";
 import { fetch } from "@tauri-apps/plugin-http";
-import { GITHUB_CLIENT_ID } from "./config.js";
+import { GoogleAuthProvider, indexedDBLocalPersistence, initializeAuth, signInWithCredential } from "firebase/auth";
+import { connectFirestoreEmulator, doc, initializeFirestore, runTransaction, serverTimestamp } from "firebase/firestore/lite";
+import { CloudSync } from "./cloud-sync.js";
+import { initFirebase } from "./firebase.js";
 import { Store, isValidDb } from "./store.js";
 import { suggestFromBacklog } from "./suggest.js";
-import { GitHubSync } from "./sync.js";
 import { startUpdater, updates } from "./updater.js";
 
 const DEFAULT_MODEL = "claude-opus-5-5";
 const MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
 const API_KEY_SECRET = "anthropic-api-key";
-const GITHUB_TOKEN_SECRET = "github-token";
 
 const io = {
   read: (name) => invoke("read_data", { name }),
@@ -33,7 +34,6 @@ let apiKey = "";
 let dataDir = "";
 
 const saveSettings = () => io.write("settings.json", JSON.stringify(settings, null, 2));
-const githubClientId = () => settings.githubClientId || GITHUB_CLIENT_ID || "";
 
 function publicSettings() {
   return {
@@ -43,33 +43,20 @@ function publicSettings() {
     model: settings.model || DEFAULT_MODEL,
     models: MODELS,
     dataDir,
-    builtInClientId: Boolean(GITHUB_CLIENT_ID),
-    githubClientId: settings.githubClientId || "",
   };
 }
 
 const store = new Store(io);
-const sync = new GitHubSync({
-  store,
-  fetch,
-  getClientId: githubClientId,
-  loadAuth: async () => {
-    const token = settings.github && (await secrets.get(GITHUB_TOKEN_SECRET));
-    return token ? { ...settings.github, token } : null;
-  },
-  saveAuth: async (auth) => {
-    if (auth) {
-      await secrets.set(GITHUB_TOKEN_SECRET, auth.token);
-      settings.github = { login: auth.login, gistId: auth.gistId };
-    } else {
-      await secrets.delete(GITHUB_TOKEN_SECRET);
-      delete settings.github;
-    }
-    await saveSettings();
-  },
-  onStatus: (status) => emit("sync", status),
-  openUrl: (url) => invoke("open_url", { url }),
-});
+let sync;
+
+// Google won't sign in inside an app window, so the Rust side opens the
+// website's connect page in the browser and returns the Google ID token.
+async function googleSignIn(auth) {
+  const idToken = await invoke("google_sign_in").catch((err) => {
+    throw err === "cancelled" ? Object.assign(new Error("cancelled"), { code: "cancelled" }) : new Error(String(err));
+  });
+  await signInWithCredential(auth, GoogleAuthProvider.credential(idToken));
+}
 
 store.onChange((source) => {
   if (source === "remote") emit("state", store.view());
@@ -81,6 +68,19 @@ const ready = (async () => {
   apiKey = (await secrets.get(API_KEY_SECRET)) || "";
   dataDir = await invoke("data_dir_path");
   await store.load();
+  // The request-only Firestore client: no live connection to stall in WebKit.
+  const firestore = { initializeFirestore, connectFirestoreEmulator, doc, runTransaction, serverTimestamp };
+  const { auth, db } = initFirebase({
+    emulator: await invoke("use_firebase_emulator"),
+    firestore,
+    makeAuth: (app) => initializeAuth(app, { persistence: indexedDBLocalPersistence }),
+  });
+  sync = new CloudSync({
+    store, auth, db, firestore, client: "desktop",
+    signIn: googleSignIn,
+    cancelSignIn: () => invoke("cancel_google_sign_in"),
+    onStatus: (status) => emit("sync", status),
+  });
   await sync.init();
 })();
 
@@ -91,14 +91,14 @@ let lastFocusSync = 0;
 window.addEventListener("focus", () => {
   if (Date.now() - lastFocusSync > 30_000) {
     lastFocusSync = Date.now();
-    sync.syncSoon(0);
+    sync?.syncSoon(0);
   }
 });
 
 const errorText = (err) => (typeof err === "string" ? err : err?.message || String(err));
 
 window.api = {
-  features: { deviceLogin: true, tokenLogin: true, revealData: true },
+  features: { revealData: true },
   platform: navigator.userAgent.includes("Mac") ? "darwin" : navigator.userAgent.includes("Windows") ? "win32" : "linux",
 
   async getState() {
@@ -122,7 +122,6 @@ window.api = {
       apiKey = key;
     }
     if (MODELS.includes(patch?.model)) settings.model = patch.model;
-    if (typeof patch?.githubClientId === "string") settings.githubClientId = patch.githubClientId.trim();
     await saveSettings();
     sync.emit();
     return publicSettings();
@@ -174,7 +173,6 @@ window.api = {
 
   sync: {
     login: () => sync.startLogin(),
-    loginWithToken: (token) => sync.signInWithToken(token),
     cancel: () => sync.cancelLogin(),
     signOut: () => sync.signOut(),
     now: () => sync.sync(),

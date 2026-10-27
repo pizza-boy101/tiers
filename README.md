@@ -5,7 +5,7 @@ A desktop todo app for Mac and Windows, inspired by Todomate.
 - Make your own tiers (name, color, and rank them by importance)
 - Plan days on a calendar, keep everything else in a backlog
 - Hit **Suggest from backlog** and Claude picks what to pull onto the day (needs an Anthropic API key)
-- Sign in with GitHub to sync between computers
+- Sign in with Google to sync between your computers and phone
 
 Your data is saved locally first, so the app works offline. Sync is optional.
 
@@ -45,20 +45,22 @@ Open Settings (gear icon), paste an Anthropic API key, and save. You can get a k
 
 ## Sync
 
-Sync stores your tasks in a private Gist on your GitHub account. Every device you connect uses the same Gist.
+Click **Sign in with Google** in Settings on each device (desktop and phone) with the same Google account, and your tasks stay in sync. Everything still works offline; changes sync when you're back online.
 
-**Quickest way (works everywhere, including the phone):** in Settings, tap **Create a token**. GitHub opens with the right box (**gist**) already ticked; create the token, copy it, and paste it into the app. Do the same on each device (you can reuse the token).
+- On the phone/web version, sign-in opens a Google window.
+- On the desktop app, sign-in opens your browser (Google doesn't allow signing in inside app windows); sign in there and come back to the app.
 
-**Sign in with GitHub (desktop only, optional):** needs a GitHub OAuth app (one time, free):
+Your data is stored in Firebase (Firestore) under your Google account, and only your account can read it. Your API key stays on each device and is never synced. On the web version, it's kept in the browser's storage on that device.
 
-1. Go to [GitHub → Settings → Developer settings → OAuth Apps](https://github.com/settings/developers) and click **New OAuth App**.
-2. Name it `Tiers`. For both URLs, put this repo's URL (the callback isn't used).
-3. Click **Register application**, then tick **Enable Device Flow** and save.
-4. Copy the **Client ID** into `src/config.js` and rebuild, or paste it into the app's Settings.
+### Firebase setup (for whoever runs the project)
 
-Then click **Sign in with GitHub** in Settings on each computer.
+The app uses the Firebase project in `src/firebase.js`. In the [Firebase console](https://console.firebase.google.com):
 
-On the web version, your API key and GitHub token are kept in the browser's storage on that device.
+1. **Authentication → Sign-in method:** enable **Google**.
+2. **Authentication → Settings → Authorized domains:** include `pizza-boy101.github.io`.
+3. **Firestore Database → Rules:** paste the contents of [`firestore.rules`](firestore.rules) and click **Publish**.
+
+`npm run test:cloud` runs the sync tests against local Firebase emulators (needs Java).
 
 ## Build from source
 
@@ -68,6 +70,7 @@ Needs [Node.js](https://nodejs.org) 20+ and [Rust](https://rustup.rs).
 npm install
 npm start            # run the app
 npm test             # run the tests
+npm run test:cloud   # sync tests against the Firebase emulators
 npm run dist:mac     # build the .dmg
 npm run build:web    # build the web app into dist-web/
 ```

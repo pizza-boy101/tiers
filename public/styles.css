@@ -97,7 +97,6 @@ code { font-size: 12px; background: var(--panel-2); padding: 1px 5px; border-rad
 .sync-chip.busy svg { animation: pulse 1s ease-in-out infinite alternate; }
 .sync-chip.error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 @keyframes pulse { to { opacity: 0.35; } }
-.device-code { font-size: 18px; letter-spacing: 0.12em; padding: 4px 10px; font-weight: 650; }
 [hidden] { display: none !important; }
 
 /* Buttons */
@@ -476,7 +475,3 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
   .dialog-actions { flex-wrap: wrap; }
   .toast { bottom: calc(env(safe-area-inset-bottom) + 16px); max-width: calc(100vw - 32px); }
 }
-
-.token-details summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-top: 4px; }
-.token-details[open] summary { margin-bottom: 8px; }
-.token-row input { flex: 1; min-width: 0; }

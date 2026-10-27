@@ -1,10 +1,13 @@
 // The backend for the web / home-screen version. Same `window.api` as the
 // desktop app (src/backend.js), but data lives in the browser's storage and
-// sync signs in with a pasted GitHub token.
+// Google sign-in uses Firebase's popup.
 
+import { GoogleAuthProvider, getAuth, signInWithPopup } from "firebase/auth";
+import { connectFirestoreEmulator, doc, initializeFirestore, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
+import { CloudSync } from "./cloud-sync.js";
+import { initFirebase } from "./firebase.js";
 import { Store, isValidDb } from "./store.js";
 import { suggestFromBacklog } from "./suggest.js";
-import { GitHubSync } from "./sync.js";
 
 const DEFAULT_MODEL = "claude-opus-5-5";
 const MODELS = ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"];
@@ -42,32 +45,19 @@ function publicSettings() {
     model: settings.model || DEFAULT_MODEL,
     models: MODELS,
     dataDir: "",
-    builtInClientId: true,
-    githubClientId: "",
   };
 }
 
 const store = new Store(io);
-const sync = new GitHubSync({
-  store,
-  fetch: (...args) => fetch(...args),
-  getClientId: () => "",
-  loadAuth: async () => {
-    const token = settings.github && secrets.get("github-token");
-    return token ? { ...settings.github, token } : null;
-  },
-  saveAuth: async (auth) => {
-    if (auth) {
-      secrets.set("github-token", auth.token);
-      settings.github = { login: auth.login, gistId: auth.gistId };
-    } else {
-      secrets.delete("github-token");
-      delete settings.github;
-    }
-    await saveSettings();
-  },
+
+// Served from this computer (development): use the local Firebase emulators.
+const emulator = ["localhost", "127.0.0.1"].includes(location.hostname);
+const firestore = { initializeFirestore, connectFirestoreEmulator, doc, runTransaction, serverTimestamp, onSnapshot };
+const { auth, db } = initFirebase({ emulator, firestore, makeAuth: (app) => getAuth(app) });
+const sync = new CloudSync({
+  store, auth, db, firestore, client: "web",
+  signIn: (a) => signInWithPopup(a, new GoogleAuthProvider()),
   onStatus: (status) => emit("sync", status),
-  openUrl: (url) => window.open(url, "_blank", "noopener"),
 });
 
 store.onChange((source) => {
@@ -104,7 +94,7 @@ function pickFile() {
 
 window.api = {
   platform: "web",
-  features: { deviceLogin: false, tokenLogin: true, revealData: false },
+  features: { revealData: false },
 
   async getState() {
     await ready;
@@ -184,7 +174,6 @@ window.api = {
 
   sync: {
     login: () => sync.startLogin(),
-    loginWithToken: (token) => sync.signInWithToken(token),
     cancel: () => sync.cancelLogin(),
     signOut: () => sync.signOut(),
     now: () => sync.sync(),

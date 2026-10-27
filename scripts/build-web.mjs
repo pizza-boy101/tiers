@@ -13,15 +13,18 @@ for (const file of ["app.js", "styles.css", "icon.svg"]) {
 }
 await fs.cp("web/icons", path.join(out, "icons"), { recursive: true });
 await fs.copyFile("web/manifest.webmanifest", path.join(out, "manifest.webmanifest"));
+await fs.copyFile("web/connect.html", path.join(out, "connect.html"));
 
-await build({
-  entryPoints: ["src/backend-web.js"],
-  bundle: true,
-  minify: true,
-  format: "iife",
-  target: ["safari15", "chrome100"],
-  outfile: path.join(out, "backend.js"),
-});
+for (const [entry, file] of [["src/backend-web.js", "backend.js"], ["src/connect.js", "connect.js"]]) {
+  await build({
+    entryPoints: [entry],
+    bundle: true,
+    minify: true,
+    format: "iife",
+    target: ["safari15", "chrome100"],
+    outfile: path.join(out, file),
+  });
+}
 
 const head = `
   <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)">
@@ -54,7 +57,7 @@ async function walk(dir) {
   }
 }
 await walk(out);
-const list = ["./", ...files.filter((f) => f !== "index.html"), "index.html"];
+const list = ["./", ...files.filter((f) => !["index.html", "connect.html", "connect.js"].includes(f)), "index.html"];
 const sw = (await fs.readFile("web/sw.js", "utf8"))
   .replace("__VERSION__", `tiers-${hash.digest("hex").slice(0, 12)}`)
   .replace("__FILES__", JSON.stringify(list));
