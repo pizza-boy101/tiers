@@ -6,6 +6,11 @@
 // "lite" client, because the live connection stalls inside its WebKit
 // window. Both also check once a minute while on screen, on returning to
 // the app, and after local edits.
+//
+// Each device remembers which account its tasks belong to (linkedAccount).
+// Tasks made before ever signing in are added to the account automatically;
+// tasks that belong to a different account wait until the person chooses
+// to merge them or to replace them with this account's tasks.
 
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { normalize, sameContent } from "./store.js";
@@ -29,10 +34,12 @@ export class CloudSync {
   // signIn: platform-specific, signs `auth` in with Google (popup on the web,
   // the system browser on desktop). cancelSignIn: optional. firestore: the
   // client functions { doc, runTransaction, serverTimestamp, onSnapshot? }.
-  constructor({ store, auth, db, firestore, signIn, cancelSignIn, client, onStatus }) {
-    Object.assign(this, { store, auth, db, fs: firestore, signIn, cancelSignIn, client, onStatus });
+  // linkedAccount: { get() -> uid|null, set(uid) } stored per device.
+  // onNotice: one-off messages for the person (e.g. tasks were added).
+  constructor({ store, auth, db, firestore, signIn, cancelSignIn, client, onStatus, linkedAccount, onNotice }) {
+    Object.assign(this, { store, auth, db, fs: firestore, signIn, cancelSignIn, client, onStatus, linkedAccount, onNotice });
     this.user = null;
-    this.state = { syncing: false, signingIn: false, lastSyncAt: null, error: null };
+    this.state = { syncing: false, signingIn: false, lastSyncAt: null, error: null, otherAccount: false };
     this.unlisten = null;
     this.pending = null;
   }
@@ -40,7 +47,7 @@ export class CloudSync {
   init() {
     const poller = setInterval(() => {
       const visible = typeof document === "undefined" || document.visibilityState === "visible";
-      if (this.user && visible && !this.state.syncing) this.sync();
+      if (this.user && visible && !this.state.syncing && !this.state.otherAccount) this.sync();
     }, POLL_EVERY);
     poller.unref?.(); // don't keep Node (tests) running
     return new Promise((resolve) => {
@@ -48,9 +55,15 @@ export class CloudSync {
         this.unlisten?.();
         this.unlisten = null;
         this.user = user;
+        this.state.otherAccount = false;
         if (user) {
-          if (this.fs.onSnapshot) this.listen();
-          this.syncSoon(0);
+          const linked = this.linkedAccount.get();
+          if (linked && linked !== user.uid) {
+            this.state.otherAccount = true;
+            this.onNotice?.("This device has tasks from a different Google account. Choose what to do with them in Settings.");
+          } else {
+            this.start();
+          }
         }
         this.emit();
         resolve();
@@ -101,7 +114,27 @@ export class CloudSync {
     this.unlisten?.();
     this.unlisten = null;
     await signOut(this.auth);
-    this.state = { syncing: false, signingIn: false, lastSyncAt: null, error: null };
+    this.state = { syncing: false, signingIn: false, lastSyncAt: null, error: null, otherAccount: false };
+    this.emit();
+  }
+
+  // The device's tasks belong to another account. "merge" adds them to this
+  // account; "replace" swaps them for this account's tasks.
+  async resolveOtherAccount(choice) {
+    if (!this.user || !this.state.otherAccount) return;
+    if (choice === "replace") {
+      let remote = null;
+      await this.fs.runTransaction(this.db, async (tx) => {
+        const snap = await tx.get(this.ref());
+        remote = snap.exists() ? JSON.parse(snap.data().data) : null;
+      });
+      await this.store.adopt(remote);
+      await this.linkedAccount.set(this.user.uid);
+    } else {
+      await this.linkedAccount.set(null); // treat as never linked: tasks are added
+    }
+    this.state.otherAccount = false;
+    this.start();
     this.emit();
   }
 
@@ -109,6 +142,11 @@ export class CloudSync {
 
   ref() {
     return this.fs.doc(this.db, "users", this.user.uid);
+  }
+
+  start() {
+    if (this.fs.onSnapshot) this.listen();
+    this.syncSoon(0);
   }
 
   listen() {
@@ -131,13 +169,13 @@ export class CloudSync {
   }
 
   syncSoon(delay = 1500) {
-    if (!this.user) return;
+    if (!this.user || this.state.otherAccount) return;
     clearTimeout(this.pending);
     this.pending = setTimeout(() => this.sync(), delay);
   }
 
   async sync() {
-    if (!this.user) return;
+    if (!this.user || this.state.otherAccount) return;
     if (this.state.syncing) {
       this.again = true;
       return;
@@ -147,14 +185,28 @@ export class CloudSync {
     try {
       // Read, merge, and write in one transaction: if another device writes in
       // between, Firestore re-runs this with its data, so nothing is overwritten.
+      const uid = this.user.uid;
+      const firstLink = this.linkedAccount.get() !== uid;
+      let added = 0;
       await this.fs.runTransaction(this.db, async (tx) => {
         const snap = await tx.get(this.ref());
-        if (snap.exists()) await this.store.mergeRemote(JSON.parse(snap.data().data));
+        const remote = snap.exists() ? JSON.parse(snap.data().data) : null;
+        if (firstLink) {
+          const inAccount = new Set((remote?.tasks || []).map((t) => t.id));
+          added = this.store.db.tasks.filter((t) => !inAccount.has(t.id)).length;
+        }
+        if (remote) await this.store.mergeRemote(remote);
         const data = JSON.stringify(this.store.db);
         if (!snap.exists() || snap.data().data !== data) {
           tx.set(this.ref(), { data, updatedAt: this.fs.serverTimestamp(), client: this.client });
         }
       });
+      if (firstLink) {
+        await this.linkedAccount.set(uid);
+        if (added > 0) {
+          this.onNotice?.(`Your ${added} task${added === 1 ? "" : "s"} on this device ${added === 1 ? "is" : "are"} now in your Google account.`);
+        }
+      }
       this.state.lastSyncAt = Date.now();
       this.state.error = null;
     } catch (err) {

@@ -4,7 +4,7 @@ A desktop todo app for Mac and Windows, inspired by Todomate.
 
 - Make your own tiers (name, color, and rank them by importance)
 - Plan days on a calendar, keep everything else in a backlog
-- Hit **Suggest from backlog** and Claude picks what to pull onto the day (needs an Anthropic API key)
+- Hit **Suggest from backlog** and AI picks what to pull onto the day: free Gemini built in, or Claude with your own key
 - Sign in with Google to sync between your computers and phone
 
 Your data is saved locally first, so the app works offline. Sync is optional.
@@ -41,11 +41,18 @@ It opens full screen like a normal app and works offline. On a phone the calenda
 
 ## Suggestions
 
-Open Settings (gear icon), paste an Anthropic API key, and save. You can get a key at [console.anthropic.com](https://console.anthropic.com). The key is stored in your system keychain and is only sent to the Anthropic API.
+**Suggest from backlog** (at the top of the day) sends your backlog — with how long each task has waited and any notes — plus your tier ranking and what's already planned, and gets back up to three tasks to pull onto that day, each with a reason.
+
+Pick the AI in **Settings → Suggestions**:
+
+- **Gemini (free, built in):** no key needed; sign in with Google once. Runs through the project's Firebase (Firebase AI Logic), so the Gemini key never leaves Google. Everyone shares the project's free daily quota, and each device can make 25 free suggestions a day. On Gemini's free tier, Google may use what's sent to improve its products.
+- **Claude (your own API key):** paste an Anthropic API key from [console.anthropic.com](https://console.anthropic.com). The key is stored in your system keychain (or the browser's storage on the web version) and is only sent to Anthropic.
 
 ## Sync
 
 Click **Sign in with Google** in Settings on each device (desktop and phone) with the same Google account, and your tasks stay in sync. Everything still works offline; changes sync when you're back online.
+
+Tasks you made before signing in are added to your account automatically the first time you sign in on that device. If a device's tasks belong to a *different* Google account (say, someone else used this computer), sync pauses and Settings asks whether to add them to your account or replace them with your account's tasks.
 
 - On the phone/web version, sign-in opens a Google window.
 - On the desktop app, sign-in opens your browser (Google doesn't allow signing in inside app windows); sign in there and come back to the app.
@@ -59,6 +66,8 @@ The app uses the Firebase project in `src/firebase.js`. In the [Firebase console
 1. **Authentication → Sign-in method:** enable **Google**.
 2. **Authentication → Settings → Authorized domains:** include `pizza-boy101.github.io`.
 3. **Firestore Database → Rules:** paste the contents of [`firestore.rules`](firestore.rules) and click **Publish**.
+4. **AI Logic:** get started with the **Gemini Developer API**. Then in **App Check → APIs**, leave Firebase AI Logic **unenforced** (the desktop app can't pass App Check). On the free Spark plan this can't cost money; the worst case is the shared daily quota running out.
+5. If you restrict the web API key in Google Cloud, allow: Identity Toolkit API, Token Service API, Cloud Firestore API, Firebase Installations API, and Firebase AI Logic API.
 
 `npm run test:cloud` runs the sync tests against local Firebase emulators (needs Java).
 

@@ -37,12 +37,18 @@ async function device(sub, email, kind = "web") {
   const files = new Map();
   const store = new Store({ read: async (k) => files.get(k) ?? null, write: async (k, v) => void files.set(k, v) });
   await store.load();
+  const notices = [];
+  let linked = null;
   const sync = new CloudSync({
     store, auth, db, firestore, client: kind, onStatus: () => {},
+    onNotice: (m) => notices.push(m),
+    linkedAccount: { get: () => linked, set: async (uid) => { linked = uid; } },
     signIn: (a) => signInWithCredential(a, googleUser(sub, email)),
   });
   await sync.init();
-  return { store, sync, auth, db };
+  return { store, sync, auth, db, notices, linked: () => linked, signInAs: (newSub, newEmail) => {
+    sync.signIn = (a) => signInWithCredential(a, googleUser(newSub, newEmail));
+  } };
 }
 
 const addTask = (store, id, title) => {
@@ -114,4 +120,77 @@ test("the desktop (request-only client) and the web stay in sync", async () => {
 
   await desktop.sync.signOut();
   await web.sync.signOut();
+});
+
+test("tasks made before ever signing in are added to the account", async () => {
+  const sub = `upgrade-${Date.now()}`;
+  const email = `${sub}@example.com`;
+  const laptop = await device(sub, email);
+  await addTask(laptop.store, "l1", "Already in the account");
+  await laptop.sync.startLogin();
+  assert.ok(await until(() => laptop.sync.status().lastSyncAt));
+
+  // An older install that was never signed in, with its own tasks and a renamed tier.
+  const old = await device(sub, email, "desktop");
+  await addTask(old.store, "o1", "Offline task 1");
+  await addTask(old.store, "o2", "Offline task 2");
+  const v = old.store.view();
+  await old.store.applyEdit({ tiers: v.tiers.map((t) => (t.id === "t_must" ? { ...t, name: "Urgent" } : t)), tasks: v.tasks, baseRev: v.rev });
+
+  await old.sync.startLogin();
+  assert.ok(await until(() => old.notices.length > 0), "a notice is shown");
+  assert.equal(old.notices[0], "Your 2 tasks on this device are now in your Google account.");
+  assert.equal(old.linked(), old.auth.currentUser.uid, "the device is now linked to the account");
+  assert.deepEqual(ids(old.store), ["l1", "o1", "o2"]);
+  assert.ok(await until(() => ids(laptop.store).join() === "l1,o1,o2"), "the other device gets them");
+  assert.ok(await until(() => laptop.store.db.tiers[0].name === "Urgent"), "and the renamed tier");
+
+  // Signing out and back in to the same account doesn't ask or re-announce.
+  await old.sync.signOut();
+  await old.sync.startLogin();
+  assert.equal(old.sync.status().otherAccount, false);
+  await old.sync.sync();
+  assert.equal(old.notices.length, 1);
+
+  await laptop.sync.signOut();
+  await old.sync.signOut();
+});
+
+test("another account's tasks wait for a choice", async () => {
+  const a = `alice2-${Date.now()}`;
+  const b = `bob2-${Date.now()}`;
+  // Bob already has his own tasks.
+  const bobPhone = await device(b, `${b}@example.com`);
+  await addTask(bobPhone.store, "b1", "Bob's task");
+  await bobPhone.sync.startLogin();
+  assert.ok(await until(() => bobPhone.sync.status().lastSyncAt));
+
+  for (const choice of ["merge", "replace"]) {
+    // A shared computer: Alice used it, then signs out and Bob signs in.
+    const shared = await device(a, `${a}@example.com`, "desktop");
+    await addTask(shared.store, `a-${choice}`, "Alice's task");
+    await shared.sync.startLogin();
+    await shared.sync.sync();
+    await shared.sync.signOut();
+    shared.signInAs(b, `${b}@example.com`);
+    await shared.sync.startLogin();
+    assert.equal(shared.sync.status().otherAccount, true, "sync pauses");
+    assert.match(shared.notices.at(-1), /different Google account/);
+    await shared.sync.sync(); // nothing happens while paused
+    await bobPhone.sync.sync();
+    assert.ok(!ids(bobPhone.store).includes(`a-${choice}`), "Alice's task isn't uploaded to Bob's account");
+
+    await shared.sync.resolveOtherAccount(choice);
+    assert.equal(shared.sync.status().otherAccount, false);
+    assert.ok(await until(() => shared.sync.status().lastSyncAt && !shared.sync.state.syncing));
+    if (choice === "merge") {
+      await until(async () => { await bobPhone.sync.sync(); return ids(bobPhone.store).includes("a-merge"); });
+      assert.ok(ids(bobPhone.store).includes("a-merge"), "merge adds Alice's task to Bob's account");
+    } else {
+      assert.ok(!ids(shared.store).includes("a-replace"), "replace removes Alice's task from this device");
+      assert.ok(ids(shared.store).includes("b1"), "and shows Bob's tasks");
+    }
+    await shared.sync.signOut();
+  }
+  await bobPhone.sync.signOut();
 });

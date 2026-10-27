@@ -178,6 +178,12 @@ export class Store {
     return this.view();
   }
 
+  // Replace this device's data with an account's copy (or a fresh start).
+  async adopt(remote) {
+    await this.commit(remote ? normalize(structuredClone(remote)) : defaultDb(), "remote");
+    return this.view();
+  }
+
   // Merge in a copy from another device. Returns the merged db.
   async mergeRemote(remote) {
     const merged = merge(this.db, normalize(structuredClone(remote)));

@@ -323,15 +323,22 @@ function renderBacklog() {
     '<p class="empty">Your backlog is empty. Add things you want to do someday, then pull them onto a day when you’re ready.</p>';
 }
 
+// Free Gemini needs Google sign-in; Claude needs the person's API key.
+function suggestionsReady() {
+  return state.settings.provider === "claude" ? state.settings.hasApiKey : Boolean(state.sync.signedIn);
+}
+
 function renderSuggestions() {
   const s = ui.suggest;
-  const hasKey = state.settings.hasApiKey;
+  const ready = suggestionsReady();
   const btn = $("#suggest-btn");
   btn.disabled = s.loading;
   $("#suggest-label").textContent = s.loading
     ? "Thinking…"
-    : hasKey ? `Suggest from backlog for ${dayLabel(ui.selected)}` : "Add an API key to get suggestions";
-  $("#suggest-note").hidden = !hasKey;
+    : ready
+      ? `Suggest from backlog for ${dayLabel(ui.selected)}`
+      : state.settings.provider === "claude" ? "Add an API key to get suggestions" : "Sign in with Google for free suggestions";
+  $("#suggest-note").hidden = !ready;
 
   const box = $("#suggestions");
   if (s.loading) {
@@ -381,9 +388,11 @@ function renderSyncChip() {
   const s = state.sync;
   const chip = $("#sync-chip");
   chip.hidden = !s.signedIn && !s.error;
-  chip.classList.toggle("error", Boolean(s.error));
+  chip.classList.toggle("error", Boolean(s.error || s.otherAccount));
   chip.classList.toggle("busy", Boolean(s.syncing));
-  $("#sync-chip-label").textContent = s.error
+  $("#sync-chip-label").textContent = s.otherAccount
+    ? "Sync paused"
+    : s.error
     ? "Sync problem"
     : s.syncing ? "Syncing…" : s.lastSyncAt ? `Synced ${timeAgo(s.lastSyncAt)}` : "Sync on";
   chip.title = s.error || (s.login ? `Signed in as ${s.login}` : "");
@@ -392,7 +401,16 @@ function renderSyncChip() {
 function renderSyncSettings() {
   const s = state.sync;
   const box = $("#sync-settings");
-  if (s.signedIn) {
+  if (s.signedIn && s.otherAccount) {
+    box.innerHTML = `
+      <p class="small">Signed in as <strong>${esc(s.login)}</strong>, but the tasks on this device belong to a different Google account. Sync is paused until you choose:</p>
+      <div class="row">
+        <button class="btn primary" type="button" data-sync="merge">Add them to this account</button>
+        <button class="btn" type="button" data-sync="replace">Use only this account's tasks</button>
+      </div>
+      <p class="muted small">"Use only this account's tasks" replaces what's on this device. Export a backup below first if you want to keep a copy.</p>
+      <div class="row"><button class="btn ghost small" type="button" data-sync="signout">Sign out instead</button></div>`;
+  } else if (s.signedIn) {
     box.innerHTML = `
       <p class="small">Signed in as <strong>${esc(s.login)}</strong>. ${s.lastSyncAt ? `Last synced ${timeAgo(s.lastSyncAt)}.` : ""}</p>
       ${s.error ? `<p class="suggest-error">${esc(s.error)}</p>` : ""}
@@ -415,7 +433,23 @@ function renderSyncSettings() {
 function applySyncStatus(status) {
   state.sync = status;
   renderSyncChip();
-  if ($("#settings-dialog").open) renderSyncSettings();
+  renderSuggestions();
+  if ($("#settings-dialog").open) {
+    renderSyncSettings();
+    renderProviderFields();
+  }
+}
+
+function renderProviderFields() {
+  const form = $("#settings-form");
+  const s = state.settings;
+  const provider = form.provider.value;
+  $("#claude-fields").hidden = provider !== "claude";
+  $("#provider-note").textContent = provider === "claude"
+    ? "Uses your own Anthropic API key, billed by Anthropic per use."
+    : `Free, no key needed. ${state.sync.signedIn
+      ? `${s.freeLeft ?? s.freeDailyLimit} of ${s.freeDailyLimit} left today on this device.`
+      : "Needs Google sign-in (below)."} Your backlog is sent to Google's Gemini; on the free tier, Google may use it to improve its products.`;
 }
 
 // ---------- updates (desktop) ----------
@@ -455,7 +489,7 @@ function applyUpdateStatus(status) {
 // ---------- suggestions ----------
 
 async function requestSuggestions() {
-  if (!state.settings.hasApiKey) {
+  if (!suggestionsReady()) {
     openPanel("settings");
     return;
   }
@@ -464,6 +498,7 @@ async function requestSuggestions() {
   renderSuggestions();
   const result = await api.suggest({ date, note: $("#suggest-note").value, count: 3 })
     .catch((err) => ({ error: errText(err) }));
+  if (typeof result.freeLeft === "number") state.settings.freeLeft = result.freeLeft;
   ui.suggest = result.error
     ? { loading: false, error: result.error, summary: null, items: [], date }
     : { loading: false, error: null, summary: result.summary, items: result.suggestions, date };
@@ -546,6 +581,8 @@ function fillSettings() {
       : "No key yet. Everything else works without one; suggestions turn on once you add it.";
   form.model.innerHTML = (s.models || []).map((m) => `<option value="${m}">${MODEL_LABELS[m] || m}</option>`).join("");
   form.model.value = s.model;
+  form.provider.value = s.provider || "gemini";
+  renderProviderFields();
   $("#clear-key").hidden = s.apiKeySource !== "app";
   renderSyncSettings();
   renderUpdateSettings();
@@ -844,7 +881,7 @@ function bindDialogs() {
   $("#settings-form").addEventListener("submit", async (e) => {
     if (e.submitter?.value !== "save") return;
     const form = $("#settings-form");
-    const patch = { model: form.model.value };
+    const patch = { model: form.model.value, provider: form.provider.value };
     if (form.apiKey.value.trim()) patch.apiKey = form.apiKey.value.trim();
     state.settings = await api.saveSettings(patch);
     if (patch.apiKey) toast("API key saved. Suggestions are on.");
@@ -876,6 +913,7 @@ function bindDialogs() {
   $("#reveal-btn").onclick = () => api.revealData();
 
   $("#sync-chip").onclick = () => openPanel("settings");
+  $("#settings-form").provider.addEventListener("change", renderProviderFields);
   $("#update-chip").onclick = () => api.updates.restart().catch((err) => toast(errText(err)));
   $("#update-settings").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-update]");
@@ -901,6 +939,15 @@ function bindDialogs() {
           break;
         case "cancel": await api.sync.cancel(); break;
         case "signout": await api.sync.signOut(); break;
+        case "merge":
+          await api.sync.resolveOtherAccount("merge");
+          break;
+        case "replace":
+          if (await api.confirm(`Replace the tasks on this device with the tasks in ${state.sync.login}?`)) {
+            await api.sync.resolveOtherAccount("replace");
+            toast(`Now showing the tasks in ${state.sync.login}.`);
+          }
+          break;
         case "now": await api.sync.now(); break;
       }
     } catch (err) {
@@ -921,6 +968,7 @@ async function boot() {
   setInterval(renderSyncChip, 30_000);
 
   api.sync.onStatus(applySyncStatus);
+  api.sync.onNotice?.((message) => toast(message));
   if (api.updates) {
     applyUpdateStatus(api.updates.getStatus());
     api.updates.onStatus(applyUpdateStatus);

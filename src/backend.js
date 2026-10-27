@@ -9,7 +9,7 @@ import { connectFirestoreEmulator, doc, initializeFirestore, runTransaction, ser
 import { CloudSync } from "./cloud-sync.js";
 import { initFirebase } from "./firebase.js";
 import { Store, isValidDb } from "./store.js";
-import { suggestFromBacklog } from "./suggest.js";
+import { FREE_DAILY_LIMIT, PROVIDERS, createSuggester, freeUsesLeft, providerFor } from "./suggestions.js";
 import { startUpdater, updates } from "./updater.js";
 
 const DEFAULT_MODEL = "claude-opus-5-5";
@@ -26,8 +26,13 @@ const secrets = {
   delete: (name) => invoke("delete_secret", { name }),
 };
 
-const listeners = { state: new Set(), sync: new Set() };
-const emit = (kind, payload) => listeners[kind].forEach((fn) => fn(payload));
+const listeners = { state: new Set(), sync: new Set(), notice: new Set() };
+// Notices raised during startup wait until the window is listening.
+const pendingNotices = [];
+const emit = (kind, payload) => {
+  if (kind === "notice" && listeners.notice.size === 0) pendingNotices.push(payload);
+  listeners[kind].forEach((fn) => fn(payload));
+};
 
 let settings = {};
 let apiKey = "";
@@ -42,12 +47,16 @@ function publicSettings() {
     apiKeyHint: apiKey ? `…${apiKey.slice(-4)}` : null,
     model: settings.model || DEFAULT_MODEL,
     models: MODELS,
+    provider: providerFor(settings, Boolean(apiKey)),
+    freeLeft: freeUsesLeft(settings),
+    freeDailyLimit: FREE_DAILY_LIMIT,
     dataDir,
   };
 }
 
 const store = new Store(io);
 let sync;
+let firebaseApp;
 
 // Google won't sign in inside an app window, so the Rust side opens the
 // website's connect page in the browser and returns the Google ID token.
@@ -70,21 +79,42 @@ const ready = (async () => {
   await store.load();
   // The request-only Firestore client: no live connection to stall in WebKit.
   const firestore = { initializeFirestore, connectFirestoreEmulator, doc, runTransaction, serverTimestamp };
-  const { auth, db } = initFirebase({
+  const { app, auth, db } = initFirebase({
     emulator: await invoke("use_firebase_emulator"),
     firestore,
     makeAuth: (app) => initializeAuth(app, { persistence: indexedDBLocalPersistence }),
   });
+  firebaseApp = app;
   sync = new CloudSync({
     store, auth, db, firestore, client: "desktop",
     signIn: googleSignIn,
     cancelSignIn: () => invoke("cancel_google_sign_in"),
     onStatus: (status) => emit("sync", status),
+    onNotice: (message) => emit("notice", message),
+    // Which Google account this device's tasks belong to.
+    linkedAccount: {
+      get: () => settings.syncAccount || null,
+      set: async (uid) => {
+        if (uid) settings.syncAccount = uid;
+        else delete settings.syncAccount;
+        await saveSettings();
+      },
+    },
   });
   await sync.init();
 })();
 
 startUpdater().catch((err) => console.error("Updater failed to start:", err));
+
+const suggest = createSuggester({
+  settings: () => settings,
+  saveSettings,
+  getApiKey: () => apiKey,
+  getApp: () => firebaseApp,
+  isSignedIn: () => Boolean(sync?.status().signedIn),
+  fetch,
+  defaultModel: DEFAULT_MODEL,
+});
 
 // Pull changes from other devices when you come back to the app.
 let lastFocusSync = 0;
@@ -94,8 +124,6 @@ window.addEventListener("focus", () => {
     sync?.syncSoon(0);
   }
 });
-
-const errorText = (err) => (typeof err === "string" ? err : err?.message || String(err));
 
 window.api = {
   features: { revealData: true },
@@ -122,28 +150,13 @@ window.api = {
       apiKey = key;
     }
     if (MODELS.includes(patch?.model)) settings.model = patch.model;
+    if (PROVIDERS.includes(patch?.provider)) settings.provider = patch.provider;
     await saveSettings();
     sync.emit();
     return publicSettings();
   },
 
-  async suggest(req) {
-    if (!apiKey) return { error: "Add an Anthropic API key in Settings first." };
-    try {
-      return await suggestFromBacklog({
-        apiKey,
-        fetch,
-        model: settings.model || DEFAULT_MODEL,
-        db: store.db,
-        date: req?.date,
-        note: typeof req?.note === "string" ? req.note.slice(0, 1000) : "",
-        count: Math.min(Math.max(Number(req?.count) || 3, 1), 8),
-      });
-    } catch (err) {
-      console.error("Suggest failed:", err);
-      return { error: err.userMessage || errorText(err) || "Suggestion request failed" };
-    }
-  },
+  suggest: (req) => suggest({ ...req, db: store.db }),
 
   confirm: (message) => invoke("confirm", { message }),
 
@@ -174,6 +187,11 @@ window.api = {
   sync: {
     login: () => sync.startLogin(),
     cancel: () => sync.cancelLogin(),
+    resolveOtherAccount: (choice) => sync.resolveOtherAccount(choice),
+    onNotice: (fn) => {
+      listeners.notice.add(fn);
+      pendingNotices.splice(0).forEach(fn);
+    },
     signOut: () => sync.signOut(),
     now: () => sync.sync(),
     onStatus: (fn) => listeners.sync.add(fn),

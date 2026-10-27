@@ -113,14 +113,24 @@
     </section>
 
     <form method="dialog" class="dialog-body" id="settings-form" data-pane="settings" role="tabpanel">
-      <label>Anthropic API key
-        <input name="apiKey" type="password" autocomplete="off" placeholder="sk-ant-…">
+      <h3>Suggestions</h3>
+      <label>AI for suggestions
+        <select name="provider">
+          <option value="gemini">Gemini (free, built in)</option>
+          <option value="claude">Claude (your own API key)</option>
+        </select>
       </label>
-      <p class="muted small" id="key-status"></p>
-      <label>Model for suggestions<select name="model"></select></label>
-      <p class="muted small">The key stays on this device and is only sent to the Anthropic API.</p>
+      <p class="muted small" id="provider-note"></p>
+      <div id="claude-fields" class="field-group">
+        <label>Anthropic API key
+          <input name="apiKey" type="password" autocomplete="off" placeholder="sk-ant-…">
+        </label>
+        <p class="muted small" id="key-status"></p>
+        <label>Claude model<select name="model"></select></label>
+        <p class="muted small">The key stays on this device and is only sent to the Anthropic API.</p>
+      </div>
       <hr>
-      <h3>Sync between computers</h3>
+      <h3>Sync between devices</h3>
       <div id="sync-settings"></div>
       <div id="update-section" hidden>
         <hr>
