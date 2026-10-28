@@ -3,6 +3,7 @@
 // Google sign-in uses Firebase's popup.
 
 import { GoogleAuthProvider, getAuth, signInWithPopup } from "firebase/auth";
+import { createWebUpdates } from "./web-updates.js";
 import { connectFirestoreEmulator, doc, initializeFirestore, onSnapshot, runTransaction, serverTimestamp } from "firebase/firestore";
 import { CloudSync } from "./cloud-sync.js";
 import { initFirebase } from "./firebase.js";
@@ -23,8 +24,9 @@ const secrets = {
   delete: (name) => localStorage.removeItem(`${PREFIX}secret:${name}`),
 };
 
-// Offline support (see web/sw.js).
-if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+// Offline support (see web/sw.js), which also tells us about new deploys.
+const updates = createWebUpdates({ serviceWorker: navigator.serviceWorker, reload: () => location.reload() });
+updates.startTimer();
 
 // Ask the browser not to clear our data when space runs low.
 navigator.storage?.persist?.().catch(() => {});
@@ -102,6 +104,7 @@ const suggest = createSuggester({
 // Pull changes from other devices whenever the app comes back to the front.
 let lastWakeSync = 0;
 const wake = () => {
+  if (document.visibilityState === "visible") updates.wake();
   if (document.visibilityState === "visible" && Date.now() - lastWakeSync > 30_000) {
     lastWakeSync = Date.now();
     sync.syncSoon(0);
@@ -182,6 +185,7 @@ window.api = {
   },
 
   revealData: async () => {},
+  updates,
   openUrl: async (url) => window.open(url, "_blank", "noopener"),
 
   sync: {

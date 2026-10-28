@@ -454,16 +454,56 @@ function renderProviderFields() {
 
 // ---------- updates (desktop) ----------
 
-function renderUpdateChip() {
+// The top-right indicator: shows once a new version is found (desktop) or
+// deployed (web); the dot pulses when it's ready to install.
+function renderUpdateIndicator() {
   const u = state.updates;
-  const chip = $("#update-chip");
-  chip.hidden = !u || !["ready", "installed"].includes(u.state);
-  if (!chip.hidden) chip.title = `Tiers ${u.available} is ready`;
+  const show = Boolean(u) && ["downloading", "ready", "installed"].includes(u.state);
+  $("#update-wrap").hidden = !show;
+  if (!show) {
+    $("#update-pop").hidden = true;
+    return;
+  }
+  const btn = $("#update-btn");
+  const ready = u.state !== "downloading";
+  btn.classList.toggle("ready", ready);
+  btn.title = ready ? "Update ready" : `Downloading Tiers ${u.available}`;
+  btn.setAttribute("aria-label", btn.title);
+  if (!$("#update-pop").hidden) renderUpdatePop();
+}
+
+function renderUpdatePop() {
+  const u = state.updates;
+  const downloading = u.state === "downloading";
+  const title = u.web ? "New version available" : downloading ? "Update downloading" : "Update ready";
+  const line = u.web
+    ? "A new version of Tiers is ready. Reload to start using it."
+    : downloading
+      ? `Tiers ${esc(u.available)} is downloading. It only takes a moment.`
+      : u.state === "installed"
+        ? `Tiers ${esc(u.available)} is installed. Restart to start using it.`
+        : `Tiers ${esc(u.available)} is ready to install.`;
+  const action = u.web ? "Reload" : u.state === "installed" ? "Restart now" : "Update now";
+  $("#update-pop").innerHTML = `
+    <h3 id="update-pop-title">${title}</h3>
+    <p>${line}</p>
+    ${u.notes ? `<p class="notes"><strong>What's new:</strong> ${esc(u.notes)}</p>` : ""}
+    ${!u.web && u.current ? `<p class="muted">You have ${esc(u.current)}.</p>` : ""}
+    <div class="row">
+      <button class="btn small ghost" type="button" data-update-pop="later">Later</button>
+      <button class="btn small primary" type="button" data-update-pop="go" ${downloading ? "disabled" : ""}>${downloading ? "Downloading…" : action}</button>
+    </div>`;
+}
+
+function toggleUpdatePop(open = $("#update-pop").hidden) {
+  if (open) renderUpdatePop();
+  $("#update-pop").hidden = !open;
+  $("#update-btn").setAttribute("aria-expanded", String(open));
 }
 
 function renderUpdateSettings() {
   const u = state.updates;
-  $("#update-section").hidden = !u;
+  $("#update-section").hidden = !u || u.web;
   if (!u) return;
   const checkBtn = '<button class="btn small" type="button" data-update="check">Check for updates</button>';
   const restartBtn = '<button class="btn small primary" type="button" data-update="restart">Restart now</button>';
@@ -473,7 +513,7 @@ function renderUpdateSettings() {
     idle: [`${version}. ${u.checkedAt ? "You're up to date." : "Updates install automatically."}`, checkBtn],
     checking: ["Checking for updates…", ""],
     downloading: [`Downloading Tiers ${esc(u.available)}…`, ""],
-    ready: [`Tiers ${esc(u.available)} is ready. It installs when you close the app.`, restartBtn],
+    ready: [`Tiers ${esc(u.available)} is ready. It installs when you close the app.`, restartBtn.replace("Restart now", "Update now")],
     installed: [`Tiers ${esc(u.available)} is installed. It starts the next time you open the app.`, restartBtn],
     error: [`Couldn't update: ${esc(u.error || "unknown error")}`, checkBtn.replace("Check for updates", "Try again")],
   }[u.state] || [version, checkBtn];
@@ -482,7 +522,7 @@ function renderUpdateSettings() {
 
 function applyUpdateStatus(status) {
   state.updates = status;
-  renderUpdateChip();
+  renderUpdateIndicator();
   if ($("#settings-dialog").open) renderUpdateSettings();
 }
 
@@ -914,7 +954,26 @@ function bindDialogs() {
 
   $("#sync-chip").onclick = () => openPanel("settings");
   $("#settings-form").provider.addEventListener("change", renderProviderFields);
-  $("#update-chip").onclick = () => api.updates.restart().catch((err) => toast(errText(err)));
+  $("#update-btn").onclick = () => toggleUpdatePop();
+  $("#update-pop").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-update-pop]");
+    if (!btn) return;
+    if (btn.dataset.updatePop === "later") return toggleUpdatePop(false);
+    btn.disabled = true;
+    btn.textContent = "Updating…";
+    try {
+      await api.updates.restart();
+    } catch (err) {
+      toast(errText(err));
+      renderUpdatePop();
+    }
+  });
+  document.addEventListener("click", (e) => {
+    if (!$("#update-pop").hidden && !e.target.closest("#update-wrap")) toggleUpdatePop(false);
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !$("#update-pop").hidden) toggleUpdatePop(false);
+  });
   $("#update-settings").addEventListener("click", async (e) => {
     const btn = e.target.closest("[data-update]");
     if (!btn) return;

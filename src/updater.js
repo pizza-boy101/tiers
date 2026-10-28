@@ -1,8 +1,9 @@
 // Automatic updates from GitHub releases (desktop only).
 //
-// The app checks latest.json on the newest release at launch and every few
-// hours. A newer version is downloaded in the background and its signature
-// checked against the public key in tauri.conf.json.
+// The app checks latest.json on the newest release at launch, every few
+// hours, and when you come back to it (at most hourly). A newer version is
+// downloaded in the background and its signature checked against the public
+// key in tauri.conf.json. The top bar shows an indicator meanwhile.
 //   macOS:   installed right away; the new version runs from the next launch.
 //   Windows: the installer needs the app closed, so it runs when the window
 //            is closed (or when you click Restart).
@@ -15,10 +16,12 @@ import { check } from "@tauri-apps/plugin-updater";
 
 const FIRST_CHECK_DELAY = 5_000;
 const CHECK_EVERY = 4 * 60 * 60_000;
+const FOCUS_CHECK_AFTER = 60 * 60_000;
 const installsInPlace = navigator.userAgent.includes("Mac");
 
 // state: disabled | idle | checking | downloading | ready | installed | error
-let status = { state: "idle", current: "", available: null, error: null };
+// available / notes: the new version and its release note, once found.
+let status = { state: "idle", current: "", available: null, notes: "", error: null };
 let pending = null; // downloaded Update not yet installed (Windows)
 const listeners = new Set();
 
@@ -27,9 +30,9 @@ function set(patch) {
   listeners.forEach((fn) => fn(status));
 }
 
-async function checkNow() {
-  if (["disabled", "checking", "downloading", "installed"].includes(status.state)) return status;
-  if (status.state === "ready") return status;
+// manual: from "Check for updates"; background failures (e.g. offline) stay quiet.
+async function checkNow({ manual = false } = {}) {
+  if (["disabled", "checking", "downloading", "ready", "installed"].includes(status.state)) return status;
   set({ state: "checking", error: null });
   try {
     const update = await check();
@@ -37,7 +40,7 @@ async function checkNow() {
       set({ state: "idle", checkedAt: Date.now() });
       return status;
     }
-    set({ state: "downloading", available: update.version });
+    set({ state: "downloading", available: update.version, notes: (update.body || "").trim() });
     await update.download();
     if (installsInPlace) {
       await update.install();
@@ -48,7 +51,8 @@ async function checkNow() {
     }
   } catch (err) {
     console.error("Update check failed:", err);
-    set({ state: "error", error: typeof err === "string" ? err : err?.message || String(err) });
+    const error = typeof err === "string" ? err : err?.message || String(err);
+    set(manual || status.state === "downloading" ? { state: "error", error } : { state: "idle", error: null });
   }
   return status;
 }
@@ -69,6 +73,9 @@ export async function startUpdater() {
   }
   setTimeout(checkNow, FIRST_CHECK_DELAY);
   setInterval(checkNow, CHECK_EVERY);
+  window.addEventListener("focus", () => {
+    if (Date.now() - (status.checkedAt || 0) > FOCUS_CHECK_AFTER) checkNow();
+  });
 
   // Windows: a downloaded update installs when the window is closed.
   await getCurrentWindow().onCloseRequested(async (event) => {
@@ -85,6 +92,6 @@ export async function startUpdater() {
 export const updates = {
   getStatus: () => status,
   onStatus: (fn) => listeners.add(fn),
-  check: checkNow,
+  check: () => checkNow({ manual: true }),
   restart,
 };

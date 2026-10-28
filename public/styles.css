@@ -82,18 +82,45 @@ code { font-size: 12px; background: var(--panel-2); padding: 1px 5px; border-rad
   font-size: 12px;
   cursor: pointer;
 }
-.update-chip {
-  height: 28px;
-  padding: 0 12px;
-  margin-right: 4px;
-  border-radius: 999px;
-  border: 0;
-  background: var(--accent);
-  color: var(--accent-text);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
+/* Update indicator (top right) */
+.update-wrap { position: relative; }
+.update-btn { position: relative; }
+.update-dot {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--focus);
+  box-shadow: 0 0 0 2px var(--bg);
 }
+.update-btn.ready .update-dot { animation: update-pulse 1.6s ease-out 3; }
+@keyframes update-pulse {
+  0% { box-shadow: 0 0 0 2px var(--bg), 0 0 0 2px color-mix(in srgb, var(--focus) 60%, transparent); }
+  100% { box-shadow: 0 0 0 2px var(--bg), 0 0 0 9px transparent; }
+}
+.update-pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 20;
+  width: min(300px, calc(100vw - 24px));
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  user-select: text;
+  -webkit-user-select: text;
+}
+.update-pop h3 { font-size: 14px; }
+.update-pop p { margin: 0; font-size: 13px; line-height: 1.45; }
+.update-pop .notes { padding: 8px 10px; border-radius: 8px; background: var(--panel-2); }
+.update-pop .row { justify-content: flex-end; margin-top: 4px; }
 .sync-chip.busy svg { animation: pulse 1s ease-in-out infinite alternate; }
 .sync-chip.error { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 40%, transparent); }
 @keyframes pulse { to { opacity: 0.35; } }
