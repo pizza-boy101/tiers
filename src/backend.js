@@ -56,7 +56,7 @@ function publicSettings() {
 
 const store = new Store(io);
 let sync;
-let firebaseApp;
+let firebaseAuth;
 
 // Google won't sign in inside an app window, so the Rust side opens the
 // website's connect page in the browser and returns the Google ID token.
@@ -79,12 +79,12 @@ const ready = (async () => {
   await store.load();
   // The request-only Firestore client: no live connection to stall in WebKit.
   const firestore = { initializeFirestore, connectFirestoreEmulator, doc, runTransaction, serverTimestamp };
-  const { app, auth, db } = initFirebase({
+  const { auth, db } = initFirebase({
     emulator: await invoke("use_firebase_emulator"),
     firestore,
     makeAuth: (app) => initializeAuth(app, { persistence: indexedDBLocalPersistence }),
   });
-  firebaseApp = app;
+  firebaseAuth = auth;
   sync = new CloudSync({
     store, auth, db, firestore, client: "desktop",
     signIn: googleSignIn,
@@ -110,7 +110,7 @@ const suggest = createSuggester({
   settings: () => settings,
   saveSettings,
   getApiKey: () => apiKey,
-  getApp: () => firebaseApp,
+  getIdToken: () => firebaseAuth.currentUser.getIdToken(),
   isSignedIn: () => Boolean(sync?.status().signedIn),
   fetch,
   defaultModel: DEFAULT_MODEL,

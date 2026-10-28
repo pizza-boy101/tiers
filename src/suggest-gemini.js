@@ -1,58 +1,42 @@
-// Free suggestions with Gemini through Firebase AI Logic. The Gemini key
-// stays with Google: the app only sends the request to the Firebase project,
-// so every user shares the project's free daily quota.
+// Free suggestions with Gemini, through the project's Cloudflare Worker
+// (worker/). The Worker holds the Gemini key, checks the Google sign-in, and
+// limits each person to a number of suggestions a day.
 
-import { GoogleAIBackend, Schema, getAI, getGenerativeModel } from "firebase/ai";
-import { EMPTY_BACKLOG, SYSTEM, buildPrompt, checkDate, cleanSuggestions } from "./suggest-prompt.js";
+import { SUGGEST_URL } from "./ai-config.js";
+import { EMPTY_BACKLOG, buildPrompt, checkDate, cleanSuggestions } from "./suggest-prompt.js";
 
-// Tried in order; the second covers the first being retired.
-const MODELS = ["gemini-2.5-flash", "gemini-flash-lite-latest"];
-const TIMEOUT = 45_000;
+const fail = (message) => Object.assign(new Error(message), { userMessage: message });
 
-const responseSchema = Schema.object({
-  properties: {
-    summary: Schema.string({ description: "One or two sentences on the overall plan for the day." }),
-    suggestions: Schema.array({
-      items: Schema.object({
-        properties: {
-          task_id: Schema.string({ description: "The id of a backlog task, copied exactly." }),
-          reason: Schema.string({ description: "A short, specific reason to do this one now." }),
-        },
-      }),
-    }),
-  },
-});
-
-function friendly(err) {
-  const text = String(err?.message || err);
-  if (/429|quota|RESOURCE_EXHAUSTED/i.test(text)) return "Today's free suggestions are used up. Try again tomorrow.";
-  if (/App Check/i.test(text)) return "Free suggestions are switched off for this project right now.";
-  if (/network|fetch|Failed to fetch|timed out/i.test(text)) return "Couldn't reach Google. Check your connection.";
+function errorFor(status, data) {
+  if (status === 401) return "Your Google sign-in has expired. Sign out and back in, then try again.";
+  if (data.error === "daily_limit") return `You've used today's ${data.limit} free suggestions. More tomorrow, or switch to Claude in Settings.`;
+  if (status === 503) return "Gemini's free quota is used up for now. Try again later, or switch to Claude in Settings.";
+  if (status === 413) return "Your backlog is too long to send. Try again with fewer backlog tasks.";
   return "Couldn't get suggestions from Gemini. Try again in a bit.";
 }
 
-export async function suggestWithGemini({ app, db, date, note, count }) {
+// getIdToken: the signed-in user's Firebase ID token. fetch: the platform's HTTP client.
+export async function suggestWithGemini({ getIdToken, fetch, db, date, note, count }) {
   checkDate(date);
   const { prompt, backlog } = buildPrompt({ db, date, note, count });
   if (backlog.length === 0) return EMPTY_BACKLOG;
 
-  const ai = getAI(app, { backend: new GoogleAIBackend() });
-  let lastError;
-  for (const model of MODELS) {
-    try {
-      const gemini = getGenerativeModel(ai, {
-        model,
-        systemInstruction: SYSTEM,
-        generationConfig: { responseMimeType: "application/json", responseSchema },
-      }, { timeout: TIMEOUT });
-      const result = await gemini.generateContent(prompt);
-      const parsed = JSON.parse(result.response.text());
-      return { summary: String(parsed.summary || ""), suggestions: cleanSuggestions(parsed.suggestions, backlog, count), model };
-    } catch (err) {
-      lastError = err;
-      if (!/not.?found|404/i.test(String(err?.message))) break; // only retired models fall through
-    }
+  let res;
+  try {
+    res = await fetch(SUGGEST_URL, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${await getIdToken()}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt }),
+    });
+  } catch {
+    throw fail("Couldn't reach the suggestion server. Check your connection.");
   }
-  console.error("Gemini suggestions failed:", lastError);
-  throw Object.assign(new Error(friendly(lastError)), { userMessage: friendly(lastError) });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(fail(errorFor(res.status, data)), { remaining: data.remaining });
+  return {
+    summary: String(data.summary || ""),
+    suggestions: cleanSuggestions(data.suggestions, backlog, count),
+    model: data.model,
+    remaining: data.remaining,
+  };
 }

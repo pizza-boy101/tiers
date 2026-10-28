@@ -36,13 +36,13 @@ test("answers are limited to real backlog ids, without duplicates", () => {
   assert.deepEqual(cleanSuggestions(undefined, backlog, 3), []);
 });
 
-test("the free daily cap resets each day", () => {
+test("the free count left today resets each day", () => {
   const d = new Date();
   const today = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   assert.equal(freeUsesLeft({}), FREE_DAILY_LIMIT);
-  assert.equal(freeUsesLeft({ freeUses: { date: today, count: 5 } }), FREE_DAILY_LIMIT - 5);
-  assert.equal(freeUsesLeft({ freeUses: { date: "2000-01-01", count: 99 } }), FREE_DAILY_LIMIT);
-  assert.equal(freeUsesLeft({ freeUses: { date: today, count: 99 } }), 0);
+  assert.equal(freeUsesLeft({ freeLeft: { date: today, remaining: 20 } }), 20);
+  assert.equal(freeUsesLeft({ freeLeft: { date: "2000-01-01", remaining: 0 } }), FREE_DAILY_LIMIT);
+  assert.equal(freeUsesLeft({ freeLeft: { date: today, remaining: 0 } }), 0);
 });
 
 test("people with a saved Claude key keep Claude; everyone else starts on free Gemini", () => {

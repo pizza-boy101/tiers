@@ -1,0 +1,14 @@
+{
+  "name": "tiers-ai",
+  "private": true,
+  "type": "module",
+  "description": "Free Gemini suggestions for signed-in Tiers users",
+  "scripts": {
+    "deploy": "npx -y wrangler@4.154.0 deploy",
+    "dev": "npx -y wrangler@4.154.0 dev",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "jose": "^6.2.13"
+  }
+}

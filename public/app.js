@@ -448,7 +448,7 @@ function renderProviderFields() {
   $("#provider-note").textContent = provider === "claude"
     ? "Uses your own Anthropic API key, billed by Anthropic per use."
     : `Free, no key needed. ${state.sync.signedIn
-      ? `${s.freeLeft ?? s.freeDailyLimit} of ${s.freeDailyLimit} left today on this device.`
+      ? `${s.freeLeft ?? s.freeDailyLimit} of ${s.freeDailyLimit} left today.`
       : "Needs Google sign-in (below)."} Your backlog is sent to Google's Gemini; on the free tier, Google may use it to improve its products.`;
 }
 

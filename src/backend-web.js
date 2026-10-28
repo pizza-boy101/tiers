@@ -61,7 +61,7 @@ const store = new Store(io);
 // Served from this computer (development): use the local Firebase emulators.
 const emulator = ["localhost", "127.0.0.1"].includes(location.hostname);
 const firestore = { initializeFirestore, connectFirestoreEmulator, doc, runTransaction, serverTimestamp, onSnapshot };
-const { app, auth, db } = initFirebase({ emulator, firestore, makeAuth: (a) => getAuth(a) });
+const { auth, db } = initFirebase({ emulator, firestore, makeAuth: (a) => getAuth(a) });
 const sync = new CloudSync({
   store, auth, db, firestore, client: "web",
   signIn: (a) => signInWithPopup(a, new GoogleAuthProvider()),
@@ -93,7 +93,7 @@ const suggest = createSuggester({
   settings: () => settings,
   saveSettings,
   getApiKey: apiKey,
-  getApp: () => app,
+  getIdToken: () => auth.currentUser.getIdToken(),
   isSignedIn: () => sync.status().signedIn,
   fetch: (...args) => fetch(...args),
   defaultModel: DEFAULT_MODEL,

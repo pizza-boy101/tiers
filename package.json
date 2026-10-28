@@ -6,7 +6,7 @@
   "description": "A todo app with your own tiers, a backlog, and one-click suggestions from Claude.",
   "scripts": {
     "bundle": "esbuild src/backend.js --bundle --minify --format=iife --target=safari15,chrome100 --outfile=public/backend.js",
-    "start": "tauri dev",
+    "start": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "dist": "tauri build",
     "dist:mac": "tauri build --target universal-apple-darwin",
     "dist:win": "tauri build --target x86_64-pc-windows-msvc",

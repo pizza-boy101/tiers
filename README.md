@@ -45,7 +45,7 @@ It opens full screen like a normal app and works offline. On a phone the calenda
 
 Pick the AI in **Settings → Suggestions**:
 
-- **Gemini (free, built in):** no key needed; sign in with Google once. Runs through the project's Firebase (Firebase AI Logic), so the Gemini key never leaves Google. Everyone shares the project's free daily quota, and each device can make 25 free suggestions a day. On Gemini's free tier, Google may use what's sent to improve its products.
+- **Gemini (free, built in):** no key needed; sign in with Google once. Requests go through the project's small Cloudflare Worker (`worker/`), which checks your sign-in and holds the Gemini key, so the key never reaches the app. Everyone shares the project's free Gemini quota, and each person can make 25 free suggestions a day. On Gemini's free tier, Google may use what's sent to improve its products.
 - **Claude (your own API key):** paste an Anthropic API key from [console.anthropic.com](https://console.anthropic.com). The key is stored in your system keychain (or the browser's storage on the web version) and is only sent to Anthropic.
 
 ## Sync
@@ -66,8 +66,22 @@ The app uses the Firebase project in `src/firebase.js`. In the [Firebase console
 1. **Authentication → Sign-in method:** enable **Google**.
 2. **Authentication → Settings → Authorized domains:** include `pizza-boy101.github.io`.
 3. **Firestore Database → Rules:** paste the contents of [`firestore.rules`](firestore.rules) and click **Publish**.
-4. **AI Logic:** get started with the **Gemini Developer API**. Then in **App Check → APIs**, leave Firebase AI Logic **unenforced** (the desktop app can't pass App Check). On the free Spark plan this can't cost money; the worst case is the shared daily quota running out.
-5. If you restrict the web API key in Google Cloud, allow: Identity Toolkit API, Token Service API, Cloud Firestore API, Firebase Installations API, and Firebase AI Logic API.
+4. If you restrict the web API key in Google Cloud, allow: Identity Toolkit API, Token Service API, Cloud Firestore API, and Firebase Installations API.
+
+### Suggestion server (Cloudflare Worker)
+
+Free Gemini suggestions come from `worker/`, deployed to `https://tiers-ai.tiers-ai.workers.dev` (the app's copy of this address is in `src/ai-config.js`). It accepts only signed-in users of this Firebase project, limits each person to 25 a day (counted in Cloudflare KV), and calls Gemini with a key stored as a Worker secret. It's free on Cloudflare's and Gemini's free plans.
+
+```bash
+cd worker
+npm install
+npm test                                   # Worker tests
+npx wrangler login                         # once
+npx wrangler secret put GEMINI_API_KEY     # paste the key from aistudio.google.com/apikey at the prompt
+npm run deploy                             # after changing the Worker
+```
+
+`POST /selftest` with the header `x-admin-token` (the `ADMIN_TOKEN` secret) checks the Gemini key without signing in.
 
 `npm run test:cloud` runs the sync tests against local Firebase emulators (needs Java).
 

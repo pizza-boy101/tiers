@@ -1,0 +1,14 @@
+name = "tiers-ai"
+main = "src/index.js"
+compatibility_date = "2026-10-01"
+
+# Daily usage counts per person. Create with:
+#   npx wrangler kv namespace create LIMITS
+# and put the id it prints here.
+[[kv_namespaces]]
+binding = "LIMITS"
+id = "549b8ee9ca334481b548c481a746bfd8"
+
+# Secrets (not in this file):
+#   GEMINI_API_KEY  - from https://aistudio.google.com/apikey
+#   ADMIN_TOKEN     - any random string, for POST /selftest
