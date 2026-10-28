@@ -82,6 +82,23 @@ code { font-size: 12px; background: var(--panel-2); padding: 1px 5px; border-rad
   font-size: 12px;
   cursor: pointer;
 }
+/* Full-screen notice while an update installs at launch */
+.updating {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: color-mix(in srgb, var(--bg) 94%, transparent);
+  font-size: 15px;
+}
+.updating[hidden] { display: none; }
+.updating p { margin: 0; }
+.updating .spinner { width: 22px; height: 22px; }
+
 /* Update indicator (top right) */
 .update-wrap { position: relative; }
 .update-btn { position: relative; }

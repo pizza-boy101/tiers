@@ -522,6 +522,12 @@ function renderUpdateSettings() {
 
 function applyUpdateStatus(status) {
   state.updates = status;
+  // Installing right after launch: save anything pending and say what's happening.
+  if (status.state === "applying") {
+    if (saveTimer) flushSave();
+    $("#updating-text").textContent = status.available ? `Updating Tiers to ${status.available}…` : "Updating Tiers…";
+  }
+  $("#updating").hidden = status.state !== "applying";
   renderUpdateIndicator();
   if ($("#settings-dialog").open) renderUpdateSettings();
 }

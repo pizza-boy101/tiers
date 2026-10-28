@@ -11,16 +11,31 @@ function fakeServiceWorker({ controlled }) {
 }
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-test("a new deploy taking over shows the update notice", async () => {
+test("a new deploy right after opening reloads by itself", async () => {
+  let t = 0;
   const sw = fakeServiceWorker({ controlled: true });
   let reloaded = false;
-  const updates = createWebUpdates({ serviceWorker: sw, reload: () => (reloaded = true) });
+  const updates = createWebUpdates({ serviceWorker: sw, reload: () => (reloaded = true), now: () => t });
+  await tick();
+  t = 5_000;
+  sw.dispatchEvent(new Event("controllerchange"));
+  assert.equal(reloaded, true);
+  assert.equal(updates.getStatus().state, "applying");
+});
+
+test("a new deploy while the page is in use shows the update notice", async () => {
+  let t = 0;
+  const sw = fakeServiceWorker({ controlled: true });
+  let reloaded = false;
+  const updates = createWebUpdates({ serviceWorker: sw, reload: () => (reloaded = true), now: () => t });
   const seen = [];
   updates.onStatus((s) => seen.push(s.state));
   await tick();
   assert.equal(updates.getStatus().state, "idle");
+  t = 20 * 60_000;
   sw.dispatchEvent(new Event("controllerchange"));
   assert.equal(updates.getStatus().state, "ready");
+  assert.equal(reloaded, false, "doesn't reload on its own mid-use");
   assert.deepEqual(seen, ["ready"]);
   await updates.restart();
   assert.equal(reloaded, true);

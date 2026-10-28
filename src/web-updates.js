@@ -1,10 +1,13 @@
-// The web version's update notice. Each deploy changes the offline cache's
-// service worker (web/sw.js); when the new one takes over, the page offers a
-// reload. Same shape as the desktop `updates` (src/updater.js).
+// The web version's updates. Each deploy changes the offline cache's service
+// worker (web/sw.js). When the new one takes over right after the page
+// opened, the page just reloads; later on, it shows the update notice and
+// offers a reload. Same shape as the desktop `updates` (src/updater.js).
 
 const CHECK_EVERY = 60 * 60_000;
+const AUTO_APPLY_WINDOW = 15_000; // after the page opened
 
 export function createWebUpdates({ serviceWorker, reload, now = () => Date.now() }) {
+  const openedAt = now();
   let status = { state: "idle", current: "", available: null, notes: "", error: null, web: true };
   const listeners = new Set();
   const set = (patch) => {
@@ -28,7 +31,13 @@ export function createWebUpdates({ serviceWorker, reload, now = () => Date.now()
     // The first install also "takes over" the page; only later ones are updates.
     const hadController = Boolean(serviceWorker.controller);
     serviceWorker.addEventListener("controllerchange", () => {
-      if (hadController) set({ state: "ready" });
+      if (!hadController) return;
+      if (now() - openedAt < AUTO_APPLY_WINDOW) {
+        set({ state: "applying" });
+        reload();
+      } else {
+        set({ state: "ready" });
+      }
     });
     serviceWorker.register("sw.js").then((reg) => {
       registration = reg;
